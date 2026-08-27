@@ -1,0 +1,5 @@
+/* Optional global styles if needed, empty for now as we use Shadow DOM */
+.torbox-indicator-host {
+  all: initial; /* Reset styles to prevent host bleeding */
+  display: inline-block;
+}

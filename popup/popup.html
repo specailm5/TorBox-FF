@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <img src="https://torbox.app/favicon.ico" alt="TorBox" width="24" height="24" onerror="this.style.display='none'">
+    <h2>TorBox-FF</h2>
+  </div>
+
+  <div class="content">
+    <div id="stats" class="stats-box">
+      <div class="stat-row">
+        <span>🟢 Cached:</span>
+        <strong id="countCached">0</strong>
+      </div>
+      <div class="stat-row">
+        <span>⚫ Not cached:</span>
+        <strong id="countNotCached">0</strong>
+      </div>
+      <div class="stat-row">
+        <span>⏳ Pending check:</span>
+        <strong id="countPending">0</strong>
+      </div>
+    </div>
+    
+    <button id="scanBtn" class="btn primary">Scan Current Page</button>
+  </div>
+
+  <div class="footer">
+    <a href="#" id="openSettings">⚙️ Settings</a>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

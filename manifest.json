@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "TorBox-FF",
+  "version": "1.0.0",
+  "description": "Scans web pages for supported download links, checks if they are cached on TorBox, and allows one-click downloading.",
+  "permissions": [
+    "storage",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://api.torbox.app/*",
+    "<all_urls>"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": ["*://*.torbox.app/*"],
+      "css": ["content/content.css"],
+      "js": [
+        "shared/constants.js",
+        "shared/utils.js",
+        "lib/md5.js",
+        "content/ui.js",
+        "content/scanner.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "TorBox-FF",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  }
+}

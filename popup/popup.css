@@ -1,0 +1,79 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  width: 250px;
+  margin: 0;
+  padding: 16px;
+  background-color: #ffffff;
+  color: #1f2937;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.header h2 {
+  margin: 0 0 0 8px;
+  font-size: 16px;
+  color: #111827;
+}
+
+.content {
+  margin-bottom: 16px;
+}
+
+.stats-box {
+  background: #f9fafb;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.stat-row:last-child {
+  margin-bottom: 0;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s;
+  text-align: center;
+}
+
+.btn.primary {
+  background: #3b82f6;
+  color: white;
+}
+.btn.primary:hover { background: #2563eb; }
+
+.footer {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+  text-align: center;
+}
+
+.footer a {
+  color: #4b5563;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.footer a:hover {
+  text-decoration: underline;
+}

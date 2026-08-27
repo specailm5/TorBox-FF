@@ -1,0 +1,19 @@
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+.idea/
+
+# Scripts & temporary dev files
+create_icons.py
+apple-touch-icon.png
+torbox_favicon.ico
+torbox_logo.svg
+hosters.json
+hosters_full.json
+new_defaults.json
+
+# If you decide to add node_modules later
+node_modules/
