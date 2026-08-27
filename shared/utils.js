@@ -12,8 +12,10 @@ const TorBoxUtils = {
   normalizeUrl(urlStr) {
     try {
       const url = new URL(urlStr);
-      // Remove hash
-      url.hash = '';
+      // Do not remove hash for Mega links, as it contains the decryption key
+      if (!url.hostname.includes('mega.nz') && !url.hostname.includes('mega.co.nz')) {
+        url.hash = '';
+      }
       // Remove trailing slash if present
       let finalUrl = url.href;
       if (finalUrl.endsWith('/')) {

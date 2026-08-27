@@ -333,6 +333,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getActiveDownloads().then(result => sendResponse(result));
     return true;
   }
+
+  if (message.action === TorBoxConstants.MESSAGES.REQUEST_DOWNLOAD_BY_ID) {
+    requestDownloadById(message.id, message.type).then(result => sendResponse(result));
+    return true;
+  }
 });
 
 async function createWebDl(url) {
@@ -455,6 +460,37 @@ async function getActiveDownloads() {
     return { success: true, downloads };
   } catch (error) {
     console.error("getActiveDownloads error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function requestDownloadById(id, type) {
+  try {
+    const apiKey = await getApiKey();
+    let downloadUrl;
+    let reqUrl;
+
+    if (type === 'torrent') {
+      reqUrl = `${TorBoxConstants.API_BASE}/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${id}&zip_link=true`;
+    } else if (type === 'webdl') {
+      // For webdl we just return the redirect URL which downloads it directly
+      return { success: true, downloadUrl: `${TorBoxConstants.API_BASE}/v1/api/webdl/requestdl?token=${apiKey}&web_id=${id}&redirect=true` };
+    } else if (type === 'usenet') {
+      reqUrl = `${TorBoxConstants.API_BASE}/v1/api/usenet/requestdl?token=${apiKey}&usenet_id=${id}&zip_link=true`;
+    } else {
+      throw new Error(`Unknown type: ${type}`);
+    }
+
+    const dlReq = await fetch(reqUrl);
+    const dlData = await dlReq.json();
+    if (!dlReq.ok || dlData.success === false) {
+      throw new Error(dlData.detail || dlData.error || 'Failed to request download URL');
+    }
+    
+    downloadUrl = dlData.data;
+    return { success: true, downloadUrl: downloadUrl };
+  } catch (error) {
+    console.error("requestDownloadById error:", error);
     return { success: false, error: error.message };
   }
 }
