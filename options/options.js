@@ -9,11 +9,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const autoScanCheckbox = document.getElementById('autoScan');
   const showUncachedCheckbox = document.getElementById('showUncached');
   const showErrorsCheckbox = document.getElementById('showErrors');
+  const displayModeSelect = document.getElementById('displayMode');
   const saveSettingsBtn = document.getElementById('saveSettings');
   const settingsStatus = document.getElementById('settingsStatus');
 
   // Load saved key
-  chrome.storage.local.get(['torboxApiKey', 'autoScan', 'showUncached', 'showErrors'], (result) => {
+  chrome.storage.local.get(['torboxApiKey', 'autoScan', 'showUncached', 'showErrors', 'displayMode'], (result) => {
     if (result.torboxApiKey) {
       apiKeyInput.value = result.torboxApiKey;
     }
@@ -21,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     autoScanCheckbox.checked = result.autoScan !== false; // default true
     showUncachedCheckbox.checked = result.showUncached !== false;
     showErrorsCheckbox.checked = result.showErrors === true; // default false
+    displayModeSelect.value = result.displayMode || 'buttons';
   });
 
   // Toggle visibility
@@ -92,7 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({
       autoScan: autoScanCheckbox.checked,
       showUncached: showUncachedCheckbox.checked,
-      showErrors: showErrorsCheckbox.checked
+      showErrors: showErrorsCheckbox.checked,
+      displayMode: displayModeSelect.value
     }, () => {
       showStatus(settingsStatus, 'Preferences saved', true);
     });

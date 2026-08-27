@@ -7,10 +7,35 @@ class TorBoxUI {
   createIndicator(linkElement, url) {
     if (this.indicators.has(linkElement)) return; // Already has an indicator
 
+    // 1. Clean up any orphaned indicators immediately following this link (caused by framework re-renders)
+    let sibling = linkElement.nextSibling;
+    while (sibling) {
+      if (sibling.nodeType === Node.TEXT_NODE && !sibling.textContent.trim()) {
+        sibling = sibling.nextSibling;
+        continue;
+      }
+      if (sibling.nodeType === Node.ELEMENT_NODE && sibling.classList.contains('torbox-indicator-host')) {
+        sibling.remove(); // Remove orphaned indicator
+      }
+      break;
+    }
+
+    // 2. Prevent multiple indicators for the same URL in the same parent container
+    const parent = linkElement.parentElement;
+    if (parent) {
+      try {
+        const existing = parent.querySelector(`.torbox-indicator-host[data-url="${CSS.escape(url)}"]`);
+        if (existing) return;
+      } catch (e) {
+        // Ignore CSS.escape errors for malformed URLs
+      }
+    }
+
     // We don't want to break the original site. 
     // We'll append a span right after the link.
     const container = document.createElement('span');
     container.className = 'torbox-indicator-host';
+    container.dataset.url = url;
     container.style.display = 'inline-block';
     container.style.marginLeft = '8px';
     container.style.verticalAlign = 'middle';

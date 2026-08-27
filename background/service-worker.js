@@ -299,6 +299,18 @@ async function downloadCached(url) {
 
 // Handle messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === TorBoxConstants.MESSAGES.UPDATE_BADGE) {
+    if (sender && sender.tab && sender.tab.id) {
+      const text = message.count > 0 ? message.count.toString() : '';
+      chrome.action.setBadgeText({ text: text, tabId: sender.tab.id });
+      if (message.count > 0) {
+        chrome.action.setBadgeBackgroundColor({ color: '#10b981', tabId: sender.tab.id });
+      }
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (message.action === TorBoxConstants.MESSAGES.GET_HOSTERS) {
     getHosters().then(res => sendResponse(res || { hosters: null, streams: null })).catch(() => sendResponse({ hosters: null, streams: null }));
     return true; // Keep channel open

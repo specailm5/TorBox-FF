@@ -64,14 +64,74 @@ document.addEventListener('DOMContentLoaded', () => {
           btn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 12px; height: 12px; margin-right: 4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Started`;
           btn.style.background = 'var(--success)';
           btn.style.borderColor = 'var(--success)';
-          const a = document.createElement('a');
-          a.href = res.downloadUrl;
-          a.style.display = 'none';
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => a.remove(), 1000);
+          
+          chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+            if (tabs.length > 0) {
+              chrome.scripting.executeScript({
+                target: {tabId: tabs[0].id},
+                func: (url) => {
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.style.display = 'none';
+                  document.body.appendChild(a);
+                  a.click();
+                  setTimeout(() => a.remove(), 1000);
+                },
+                args: [res.downloadUrl]
+              });
+            }
+          });
         } else {
           btn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 12px; height: 12px; margin-right: 4px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Failed`;
+          btn.style.background = 'var(--error)';
+          btn.style.borderColor = 'var(--error)';
+          btn.title = res ? res.error : 'Unknown error';
+          btn.classList.remove('downloading');
+        }
+      });
+    }
+  });
+
+  const pageLinksList = document.getElementById('pageLinksList');
+  pageLinksList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.dl-action-btn');
+    if (btn && btn.dataset.url && btn.dataset.action) {
+      if (btn.classList.contains('downloading')) return;
+      btn.classList.add('downloading');
+      btn.innerHTML = '...';
+      
+      const url = btn.dataset.url;
+      const actionMsg = btn.dataset.action === 'download' ? TorBoxConstants.MESSAGES.DOWNLOAD_CACHED : TorBoxConstants.MESSAGES.CREATE_WEBDL;
+      
+      chrome.runtime.sendMessage({
+        action: actionMsg,
+        url: url
+      }, (res) => {
+        if (res && res.success) {
+          btn.innerHTML = btn.dataset.action === 'download' ? 'Started' : 'Added';
+          btn.style.background = 'var(--success)';
+          btn.style.borderColor = 'var(--success)';
+          
+          if (res.downloadUrl) {
+            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+              if (tabs.length > 0) {
+                chrome.scripting.executeScript({
+                  target: {tabId: tabs[0].id},
+                  func: (dUrl) => {
+                    const a = document.createElement('a');
+                    a.href = dUrl;
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => a.remove(), 1000);
+                  },
+                  args: [res.downloadUrl]
+                });
+              }
+            });
+          }
+        } else {
+          btn.innerHTML = 'Failed';
           btn.style.background = 'var(--error)';
           btn.style.borderColor = 'var(--error)';
           btn.title = res ? res.error : 'Unknown error';
@@ -84,25 +144,125 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateStats() {
     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
       if (tabs.length === 0) return;
+      const tabId = tabs[0].id;
       
-      chrome.scripting.executeScript({
-        target: {tabId: tabs[0].id},
-        func: () => {
-          if (!window.torBoxUI) return { cached: 0, notCached: 0, pending: 0 };
-          let cached = 0, notCached = 0, pending = 0;
-          for (const data of window.torBoxUI.indicators.values()) {
-            if (data.badge.classList.contains('cached')) cached++;
-            else if (data.badge.classList.contains('not-cached')) notCached++;
-            else if (data.badge.classList.contains('checking')) pending++;
-          }
-          return { cached, notCached, pending };
+      chrome.storage.local.get(['displayMode'], (result) => {
+        const mode = result.displayMode || 'buttons';
+        const statsBox = document.querySelector('.stats-box');
+        const scanBtn = document.getElementById('scanBtn');
+        
+        if (mode === 'list') {
+          document.getElementById('pageLinksContainer').style.display = 'flex';
+          if (statsBox) statsBox.style.display = 'none';
+          if (scanBtn) scanBtn.style.display = 'none';
+          
+          chrome.tabs.sendMessage(tabId, { action: TorBoxConstants.MESSAGES.GET_PAGE_LINKS }, (response) => {
+            if (chrome.runtime.lastError || !response || !response.links) return;
+            const links = response.links;
+            let cached = 0, notCached = 0, pending = 0;
+            let html = '';
+            
+            const groups = {};
+            links.forEach(link => {
+              if (link.state === TorBoxConstants.STATES.CACHED) cached++;
+              else if (link.state === TorBoxConstants.STATES.NOT_CACHED) notCached++;
+              else pending++;
+              
+              const g = link.group || 'Page Links';
+              if (!groups[g]) groups[g] = [];
+              groups[g].push(link);
+            });
+            
+            Object.keys(groups).forEach(groupName => {
+              html += `<div style="padding: 6px 8px; margin: 12px 0 6px 0; background: var(--bg-tertiary); border-radius: 4px; font-weight: 600; font-size: 11px; color: var(--text-primary); border-left: 3px solid var(--primary);">${groupName}</div>`;
+              
+              groups[groupName].forEach(link => {
+                let statusColor = 'var(--text-muted)';
+                let btnHtml = '';
+                let stateText = 'Checking...';
+                
+                if (link.state === TorBoxConstants.STATES.CACHED) {
+                  statusColor = 'var(--success)';
+                  stateText = 'Cached';
+                  btnHtml = `<button class="btn primary dl-action-btn" data-url="${link.url}" data-action="download" style="padding: 4px 8px; font-size: 11px;">DL</button>`;
+                } else if (link.state === TorBoxConstants.STATES.NOT_CACHED) {
+                  statusColor = 'var(--text-muted)';
+                  stateText = 'Not cached';
+                  btnHtml = `<button class="btn primary dl-action-btn" data-url="${link.url}" data-action="upload" style="padding: 4px 8px; font-size: 11px; background: #7c3aed; border-color: #6d28d9;">To TB</button>`;
+                } else if (link.state === TorBoxConstants.STATES.ERROR) {
+                  statusColor = 'var(--error)';
+                  stateText = 'Error';
+                }
+                
+                let displayUrl = link.text && link.text.length > 2 ? link.text : link.url;
+                
+                // Fallback URL formatting if the text wasn't useful
+                if (displayUrl === link.url) {
+                  if (displayUrl.startsWith('magnet:')) {
+                    const match = displayUrl.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
+                    if (match) {
+                      displayUrl = 'Magnet: ' + match[1].substring(0, 12) + '...';
+                    } else {
+                      displayUrl = 'Magnet Link';
+                    }
+                  } else {
+                    try {
+                      const u = new URL(link.url);
+                      let path = u.pathname !== '/' ? u.pathname : '';
+                      if (path.length > 30) {
+                         path = '/...' + path.split('/').filter(Boolean).pop();
+                      }
+                      displayUrl = u.hostname + path;
+                    } catch(e) {}
+                  }
+                }
+                
+                html += `
+                  <div class="dl-item" style="padding: 8px; margin-bottom: 4px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary);">
+                    <div class="dl-name" title="${link.url}" style="word-break: break-all; font-size: 11px;">${displayUrl}</div>
+                    <div class="dl-meta" style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                      <span style="color: ${statusColor}; font-size: 11px; font-weight: 600;">${stateText}</span>
+                      ${btnHtml}
+                    </div>
+                  </div>
+                `;
+              });
+            });
+            
+            if (links.length === 0) {
+              html = '<div class="loading-text">No links found on this page.</div>';
+            }
+            document.getElementById('pageLinksList').innerHTML = html;
+            
+            document.getElementById('countCached').textContent = cached;
+            document.getElementById('countNotCached').textContent = notCached;
+            document.getElementById('countPending').textContent = pending;
+          });
+        } else {
+          document.getElementById('pageLinksContainer').style.display = 'none';
+          if (statsBox) statsBox.style.display = '';
+          if (scanBtn) scanBtn.style.display = '';
+          
+          chrome.scripting.executeScript({
+            target: {tabId: tabId},
+            func: () => {
+              if (!window.torBoxUI) return { cached: 0, notCached: 0, pending: 0 };
+              let cached = 0, notCached = 0, pending = 0;
+              for (const data of window.torBoxUI.indicators.values()) {
+                if (data.badge.classList.contains('cached')) cached++;
+                else if (data.badge.classList.contains('not-cached')) notCached++;
+                else if (data.badge.classList.contains('checking')) pending++;
+              }
+              return { cached, notCached, pending };
+            }
+          }, (injectionResults) => {
+            if (chrome.runtime.lastError || !injectionResults || !injectionResults[0].result) return;
+            const stats = injectionResults[0].result;
+            document.getElementById('countCached').textContent = stats.cached;
+            document.getElementById('countNotCached').textContent = stats.notCached;
+            document.getElementById('countPending').textContent = stats.pending;
+          });
         }
-      }, (injectionResults) => {
-        if (chrome.runtime.lastError || !injectionResults || !injectionResults[0].result) return;
-        const stats = injectionResults[0].result;
-        document.getElementById('countCached').textContent = stats.cached;
-        document.getElementById('countNotCached').textContent = stats.notCached;
-        document.getElementById('countPending').textContent = stats.pending;
       });
     });
   }

@@ -20,12 +20,15 @@ const TorBoxConstants = {
     CREATE_WEBDL: "CREATE_WEBDL",
     CREATE_USENET: "CREATE_USENET",
     GET_ACTIVE_DOWNLOADS: "GET_ACTIVE_DOWNLOADS",
-    REQUEST_DOWNLOAD_BY_ID: "REQUEST_DOWNLOAD_BY_ID"
+    REQUEST_DOWNLOAD_BY_ID: "REQUEST_DOWNLOAD_BY_ID",
+    UPDATE_BADGE: "UPDATE_BADGE",
+    GET_PAGE_LINKS: "GET_PAGE_LINKS"
   },
   DEFAULT_SETTINGS: {
     autoScan: true,
     showUncached: true,
-    showErrors: false
+    showErrors: false,
+    displayMode: "buttons"
   },
   DEFAULT_HOSTERS: [
     "1fichier.com",

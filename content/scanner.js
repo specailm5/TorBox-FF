@@ -4,18 +4,72 @@ class TorBoxScanner {
     this.streams = [];
     this.scannedLinks = new Set();
     this.pendingChecks = [];
+    this.pageLinks = new Map(); // Stores { url, state, originalUrl }
     this.settings = Object.assign({}, window.TorBoxConstants.DEFAULT_SETTINGS);
     
     // Bind debounced check
     this.processPendingChecks = window.TorBoxUtils.debounce(this._processPendingChecks.bind(this), 500);
+    this._setupMessageListener();
+  }
+
+  _setupMessageListener() {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.action === window.TorBoxConstants.MESSAGES.GET_PAGE_LINKS) {
+        // Convert Map to array
+        const linksList = Array.from(this.pageLinks.values());
+        sendResponse({ links: linksList });
+        return true;
+      }
+    });
+  }
+
+  _getNearestHeading(node) {
+    // 1. Try to find the article/post container and its primary title
+    let container = node.closest('article, .post, .entry, .item, .type-post');
+    if (container) {
+      const titleElement = container.querySelector('h1, h2, h3, .entry-title, .post-title');
+      if (titleElement && titleElement.textContent.trim()) {
+        return titleElement.textContent.trim();
+      }
+    }
+
+    // 2. Fallback to nearest preceding heading, but skip generic subheadings
+    const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    let closestHeading = null;
+    const ignoreWords = ['download', 'mirror', 'link', 'description', 'feature', 'requirement', 'screenshot', 'trailer', 'comment', 'repack', 'install'];
+    
+    for (const h of headings) {
+      if (h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) {
+        const text = h.textContent.trim().toLowerCase();
+        // Skip generic subheadings often found inside posts
+        const isIgnored = ignoreWords.some(w => text.includes(w)) && text.length < 30;
+        if (text && !isIgnored) {
+          closestHeading = h;
+        }
+      } else {
+        break; // passed the node
+      }
+    }
+    
+    if (closestHeading && closestHeading.textContent.trim()) {
+      return closestHeading.textContent.trim();
+    }
+    
+    // 3. Fallback to page title
+    let titleStr = document.title;
+    if (titleStr.includes('-')) titleStr = titleStr.split('-')[0].trim();
+    else if (titleStr.includes('|')) titleStr = titleStr.split('|')[0].trim();
+    
+    return titleStr || 'Page Links';
   }
 
   async init() {
     // 1. Get settings
-    const keys = await chrome.storage.local.get(['autoScan', 'showUncached', 'showErrors']);
+    const keys = await chrome.storage.local.get(['autoScan', 'showUncached', 'showErrors', 'displayMode']);
     if (keys.autoScan !== undefined) this.settings.autoScan = keys.autoScan;
     if (keys.showUncached !== undefined) this.settings.showUncached = keys.showUncached;
     if (keys.showErrors !== undefined) this.settings.showErrors = keys.showErrors;
+    if (keys.displayMode !== undefined) this.settings.displayMode = keys.displayMode;
 
     if (!this.settings.autoScan) return;
 
@@ -97,7 +151,22 @@ class TorBoxScanner {
       
       if (extractedUrl) {
         const normalizedUrl = window.TorBoxUtils.normalizeUrl(extractedUrl);
-        window.torBoxUI.createIndicator(link, normalizedUrl);
+        
+        // Track the link
+        if (!this.pageLinks.has(normalizedUrl)) {
+          this.pageLinks.set(normalizedUrl, { 
+            url: normalizedUrl, 
+            originalUrl: href,
+            text: link.textContent.trim() || link.title || '',
+            group: this._getNearestHeading(link),
+            state: window.TorBoxConstants.STATES.CHECKING 
+          });
+        }
+        
+        if (this.settings.displayMode === 'buttons') {
+          window.torBoxUI.createIndicator(link, normalizedUrl);
+        }
+        
         this.pendingChecks.push({ link, url: normalizedUrl });
         this.processPendingChecks();
       }
@@ -158,32 +227,63 @@ class TorBoxScanner {
       action: window.TorBoxConstants.MESSAGES.CHECK_CACHE,
       urls: urls
     }, (response) => {
+      let cachedCount = 0;
+      
       if (response && response.results) {
         for (const item of batch) {
           const state = response.results[item.url] || window.TorBoxConstants.STATES.ERROR;
           
-          // Apply visibility settings
-          if (state === window.TorBoxConstants.STATES.NOT_CACHED && !this.settings.showUncached) {
-            window.torBoxUI.removeIndicator(item.link);
-            continue;
+          if (this.pageLinks.has(item.url)) {
+            this.pageLinks.get(item.url).state = state;
           }
-          if (state === window.TorBoxConstants.STATES.ERROR && !this.settings.showErrors) {
-            window.torBoxUI.removeIndicator(item.link);
-            continue;
+          
+          if (this.settings.displayMode === 'buttons') {
+            // Apply visibility settings
+            if (state === window.TorBoxConstants.STATES.NOT_CACHED && !this.settings.showUncached) {
+              window.torBoxUI.removeIndicator(item.link);
+              continue;
+            }
+            if (state === window.TorBoxConstants.STATES.ERROR && !this.settings.showErrors) {
+              window.torBoxUI.removeIndicator(item.link);
+              continue;
+            }
+            window.torBoxUI.updateIndicator(item.link, state);
           }
-
-          window.torBoxUI.updateIndicator(item.link, state);
         }
       } else {
         // Error
         for (const item of batch) {
-          if (this.settings.showErrors) {
-             window.torBoxUI.updateIndicator(item.link, window.TorBoxConstants.STATES.ERROR);
-          } else {
-             window.torBoxUI.removeIndicator(item.link);
+          if (this.pageLinks.has(item.url)) {
+            this.pageLinks.get(item.url).state = window.TorBoxConstants.STATES.ERROR;
+          }
+          
+          if (this.settings.displayMode === 'buttons') {
+            if (this.settings.showErrors) {
+               window.torBoxUI.updateIndicator(item.link, window.TorBoxConstants.STATES.ERROR);
+            } else {
+               window.torBoxUI.removeIndicator(item.link);
+            }
           }
         }
       }
+      
+      this._updateBadge();
+    });
+  }
+
+  _updateBadge() {
+    if (this.settings.displayMode !== 'list') return;
+    
+    let cachedCount = 0;
+    for (const linkData of this.pageLinks.values()) {
+      if (linkData.state === window.TorBoxConstants.STATES.CACHED) {
+        cachedCount++;
+      }
+    }
+    
+    chrome.runtime.sendMessage({
+      action: window.TorBoxConstants.MESSAGES.UPDATE_BADGE,
+      count: cachedCount
     });
   }
 }
