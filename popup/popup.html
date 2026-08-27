@@ -6,22 +6,32 @@
 </head>
 <body>
   <div class="header">
-    <img src="https://torbox.app/favicon.ico" alt="TorBox" width="24" height="24" onerror="this.style.display='none'">
-    <h2>TorBox-FF</h2>
+    <div class="logo-area">
+      <img src="https://torbox.app/favicon.ico" alt="TorBox" width="24" height="24" onerror="this.style.display='none'">
+      <h2>TorBox-FF</h2>
+    </div>
+    <a href="#" id="openSettings" class="settings-btn" title="Settings">
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+    </a>
   </div>
 
-  <div class="content">
-    <div id="stats" class="stats-box">
+  <div class="tabs">
+    <div class="tab active" data-tab="stats">Scanner</div>
+    <div class="tab" data-tab="downloads">Downloads</div>
+  </div>
+
+  <div class="tab-content active" id="tab-stats">
+    <div class="stats-box">
       <div class="stat-row">
-        <span>🟢 Cached:</span>
+        <span><svg class="icon green" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg> Cached</span>
         <strong id="countCached">0</strong>
       </div>
       <div class="stat-row">
-        <span>⚫ Not cached:</span>
+        <span><svg class="icon gray" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg> Not cached</span>
         <strong id="countNotCached">0</strong>
       </div>
       <div class="stat-row">
-        <span>⏳ Pending check:</span>
+        <span><svg class="icon blue" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg> Pending</span>
         <strong id="countPending">0</strong>
       </div>
     </div>
@@ -29,9 +39,13 @@
     <button id="scanBtn" class="btn primary">Scan Current Page</button>
   </div>
 
-  <div class="footer">
-    <a href="#" id="openSettings">⚙️ Settings</a>
+  <div class="tab-content" id="tab-downloads">
+    <div id="downloadsList" class="downloads-list">
+      <div class="loading-text">Loading downloads...</div>
+    </div>
   </div>
+
+  <script src="../shared/constants.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

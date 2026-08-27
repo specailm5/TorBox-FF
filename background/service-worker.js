@@ -103,6 +103,7 @@ async function checkCache(urls) {
   
   const webUrlsToCheck = [];
   const torrentUrlsToCheck = [];
+  const usenetUrlsToCheck = [];
 
   // 1. Check memory cache first
   for (const url of uniqueUrls) {
@@ -116,6 +117,8 @@ async function checkCache(urls) {
         } else {
           results[url] = TorBoxConstants.STATES.UNSUPPORTED;
         }
+      } else if (url.toLowerCase().endsWith('.nzb')) {
+        usenetUrlsToCheck.push(url);
       } else {
         webUrlsToCheck.push(url);
       }
@@ -191,6 +194,42 @@ async function checkCache(urls) {
       console.error("Torrent cache check failed", error);
       chunk.forEach(item => {
         results[item.url] = TorBoxConstants.STATES.ERROR;
+      });
+    }
+  }
+
+  // 4. Hash remaining Usenet URLs
+  for (let i = 0; i < usenetUrlsToCheck.length; i += CHUNK_SIZE) {
+    const chunk = usenetUrlsToCheck.slice(i, i + CHUNK_SIZE);
+    const hashes = chunk.map(u => md5(u));
+    const hashStr = hashes.join(',');
+
+    try {
+      const data = await apiRequest(`/v1/api/usenet/checkcached?hash=${hashStr}&format=object`);
+      const cacheData = data.data || {};
+      
+      for (let j = 0; j < chunk.length; j++) {
+        const url = chunk[j];
+        const hash = hashes[j];
+        
+        let isCached = false;
+        if (Array.isArray(cacheData)) {
+          const found = cacheData.find(item => item.hash === hash || item === hash);
+          isCached = !!found;
+        } else {
+          isCached = !!cacheData[hash];
+        }
+
+        const state = isCached ? TorBoxConstants.STATES.CACHED : TorBoxConstants.STATES.NOT_CACHED;
+        results[url] = state;
+        
+        urlCheckCache.set(url, state);
+        setTimeout(() => urlCheckCache.delete(url), 5 * 60 * 1000);
+      }
+    } catch (error) {
+      console.error("Usenet cache check failed", error);
+      chunk.forEach(url => {
+        results[url] = TorBoxConstants.STATES.ERROR;
       });
     }
   }
@@ -284,6 +323,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     createWebDl(message.url).then(result => sendResponse(result));
     return true;
   }
+  
+  if (message.action === TorBoxConstants.MESSAGES.CREATE_USENET) {
+    createUsenet(message.url).then(result => sendResponse(result));
+    return true;
+  }
+  
+  if (message.action === TorBoxConstants.MESSAGES.GET_ACTIVE_DOWNLOADS) {
+    getActiveDownloads().then(result => sendResponse(result));
+    return true;
+  }
 });
 
 async function createWebDl(url) {
@@ -321,3 +370,128 @@ async function createWebDl(url) {
     return { success: false, error: error.message };
   }
 }
+
+async function createUsenet(url) {
+  try {
+    const apiKey = await getApiKey();
+    const formData = new FormData();
+    formData.append('link', url);
+
+    const response = await fetch(`${TorBoxConstants.API_BASE}/v1/api/usenet/createusenetdownload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: formData
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok || data.success === false) {
+      let errDetail = data.detail || data.error || 'Failed to request usenet download';
+      if (typeof errDetail === 'object') errDetail = JSON.stringify(errDetail);
+      throw new Error(errDetail);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("createUsenet error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function getActiveDownloads() {
+  try {
+    const [torrentsRes, webdlRes, usenetRes] = await Promise.allSettled([
+      apiRequest('/v1/api/torrents/mylist?bypass_cache=true'),
+      apiRequest('/v1/api/webdl/mylist?bypass_cache=true'),
+      apiRequest('/v1/api/usenet/mylist?bypass_cache=true')
+    ]);
+
+    let downloads = [];
+    
+    if (torrentsRes.status === 'fulfilled' && torrentsRes.value && torrentsRes.value.data) {
+      const list = Array.isArray(torrentsRes.value.data) ? torrentsRes.value.data : [];
+      list.forEach(t => {
+        downloads.push({
+          id: t.id,
+          name: t.name,
+          progress: t.progress || 0,
+          status: t.download_state || t.download_status || 'unknown',
+          type: 'torrent',
+          speed: t.download_speed || 0
+        });
+      });
+    }
+    
+    if (webdlRes.status === 'fulfilled' && webdlRes.value && webdlRes.value.data) {
+      const list = Array.isArray(webdlRes.value.data) ? webdlRes.value.data : [];
+      list.forEach(w => {
+        downloads.push({
+          id: w.id,
+          name: w.name,
+          progress: w.progress || 0,
+          status: w.download_state || w.download_status || 'unknown',
+          type: 'webdl',
+          speed: w.download_speed || 0
+        });
+      });
+    }
+
+    if (usenetRes.status === 'fulfilled' && usenetRes.value && usenetRes.value.data) {
+      const list = Array.isArray(usenetRes.value.data) ? usenetRes.value.data : [];
+      list.forEach(u => {
+        downloads.push({
+          id: u.id,
+          name: u.name,
+          progress: u.progress || 0,
+          status: u.download_state || u.download_status || 'unknown',
+          type: 'usenet',
+          speed: u.download_speed || 0
+        });
+      });
+    }
+
+    return { success: true, downloads };
+  } catch (error) {
+    console.error("getActiveDownloads error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Context Menu
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "torbox-download",
+    title: "Download with TorBox",
+    contexts: ["link", "selection"]
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "torbox-download") {
+    let url = info.linkUrl || info.selectionText;
+    if (url) {
+      url = url.trim();
+      const isMagnet = url.startsWith('magnet:');
+      const isNzb = url.toLowerCase().endsWith('.nzb');
+      
+      let res;
+      if (isMagnet) {
+        // Assume we just create torrent
+        res = await createWebDl(url);
+      } else if (isNzb) {
+        res = await createUsenet(url);
+      } else {
+        res = await createWebDl(url);
+      }
+      
+      if (res.success) {
+         // Could notify the user somehow (chrome.notifications requires permission)
+         console.log("Added to TorBox successfully:", url);
+      } else {
+         console.error("Failed to add to TorBox:", res.error);
+      }
+    }
+  }
+});

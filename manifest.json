@@ -6,7 +6,8 @@
   "permissions": [
     "storage",
     "downloads",
-    "scripting"
+    "scripting",
+    "contextMenus"
   ],
   "host_permissions": [
     "https://api.torbox.app/*",
@@ -23,7 +24,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "exclude_matches": ["*://*.torbox.app/*", "*://*.google.com/*", "*://*.google.*/*"],
+      "exclude_matches": ["*://*.torbox.app/*", "*://*.google.com/*"],
       "css": ["content/content.css"],
       "js": [
         "shared/constants.js",
