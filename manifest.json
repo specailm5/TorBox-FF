@@ -23,7 +23,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "exclude_matches": ["*://*.torbox.app/*"],
+      "exclude_matches": ["*://*.torbox.app/*", "*://*.google.com/*", "*://*.google.*/*"],
       "css": ["content/content.css"],
       "js": [
         "shared/constants.js",
