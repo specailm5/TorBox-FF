@@ -1,390 +1,506 @@
+/**
+ * TorBox In-Page UI Controller
+ * Renders shadow DOM badges, action buttons, and floating debrid widget.
+ */
+
 class TorBoxUI {
   constructor() {
-    this.indicators = new Map(); // url -> indicator element
+    this.indicators = new Map(); // domElement -> { container, shadow, badge, url }
     this.streamIndicator = null;
   }
 
-  createIndicator(linkElement, url) {
-    if (this.indicators.has(linkElement)) return; // Already has an indicator
+  createIndicator(domElement, url) {
+    if (this.indicators.has(domElement)) return;
 
-    // We don't want to break the original site. 
-    // We'll append a span right after the link.
+    // Remove any previous orphaned indicator attached after this element
+    let sibling = domElement.nextSibling;
+    while (sibling) {
+      if (sibling.nodeType === Node.TEXT_NODE && !sibling.textContent.trim()) {
+        sibling = sibling.nextSibling;
+        continue;
+      }
+      if (sibling.nodeType === Node.ELEMENT_NODE && sibling.classList.contains('torbox-indicator-host')) {
+        sibling.remove();
+      }
+      break;
+    }
+
     const container = document.createElement('span');
     container.className = 'torbox-indicator-host';
-    container.style.display = 'inline-block';
-    container.style.marginLeft = '8px';
-    container.style.verticalAlign = 'middle';
-    
-    // Create Shadow DOM to isolate styles
+    container.dataset.url = url;
+
+    // Attach Shadow DOM for CSS isolation
     const shadow = container.attachShadow({ mode: 'closed' });
-    
+
     const style = document.createElement('style');
     style.textContent = `
+      :host {
+        all: initial;
+        display: inline-block;
+        vertical-align: middle;
+        margin-left: 6px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      .tb-wrapper {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        vertical-align: middle;
+      }
       .tb-badge {
         display: inline-flex;
         align-items: center;
-        padding: 4px 8px;
+        padding: 3px 7px;
         border-radius: 6px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         font-size: 11px;
         font-weight: 600;
         color: #f8fafc;
-        background: #1e293b;
+        background: #0f172a;
         border: 1px solid #334155;
         cursor: default;
         user-select: none;
-        transition: all 0.2s ease;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         line-height: 1.2;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
       }
       .tb-badge svg {
-        width: 14px;
-        height: 14px;
-        margin-right: 4px;
-      }
-      .tb-badge.checking { border-color: #64748b; }
-      .tb-badge.cached { background: #064e3b; border-color: #059669; color: #34d399; }
-      .tb-badge.not-cached { opacity: 0.8; }
-      .tb-badge.error { background: #7f1d1d; border-color: #dc2626; color: #fca5a5; }
-      
-      .tb-dl-btn {
-        margin-left: 6px;
-        padding: 4px 8px;
-        border-radius: 6px;
-        background: #2563eb;
-        color: white;
-        border: 1px solid #1d4ed8;
-        cursor: pointer;
-        font-size: 11px;
-        font-weight: bold;
-        transition: background 0.2s;
-        display: inline-flex;
-        align-items: center;
-      }
-      .tb-dl-btn svg {
         width: 12px;
         height: 12px;
         margin-right: 4px;
+        flex-shrink: 0;
       }
-      .tb-dl-btn:hover {
-        background: #1d4ed8;
+      .tb-badge.checking {
+        border-color: #475569;
+        color: #94a3b8;
       }
-      .tb-dl-btn.downloading {
-        background: #475569;
-        border-color: #334155;
+      .tb-badge.cached {
+        background: rgba(6, 78, 59, 0.9);
+        border-color: #059669;
+        color: #34d399;
+      }
+      .tb-badge.not-cached {
+        background: rgba(30, 41, 59, 0.9);
+        border-color: #475569;
+        color: #94a3b8;
+      }
+      .tb-badge.error {
+        background: rgba(127, 29, 29, 0.9);
+        border-color: #dc2626;
+        color: #fca5a5;
+      }
+      
+      .tb-btn {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        outline: none;
+        user-select: none;
+      }
+      .tb-btn svg {
+        width: 12px;
+        height: 12px;
+        margin-right: 3px;
+      }
+      .tb-btn-dl {
+        background: #10b981;
+        color: #ffffff;
+        border-color: #059669;
+      }
+      .tb-btn-dl:hover {
+        background: #059669;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);
+      }
+      .tb-btn-cloud {
+        background: #6366f1;
+        color: #ffffff;
+        border-color: #4f46e5;
+      }
+      .tb-btn-cloud:hover {
+        background: #4f46e5;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(99, 102, 241, 0.4);
+      }
+      .tb-btn.loading {
+        background: #475569 !important;
+        border-color: #334155 !important;
         cursor: not-allowed;
+        transform: none !important;
+      }
+      .tb-spinner {
+        animation: tb-spin 1s linear infinite;
+      }
+      @keyframes tb-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
       }
     `;
 
+    const wrapper = document.createElement('span');
+    wrapper.className = 'tb-wrapper';
+
     const badge = document.createElement('span');
     badge.className = 'tb-badge checking';
-    badge.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Checking...`;
+    badge.innerHTML = `
+      <svg class="tb-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-opacity="0.25"></circle>
+        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg> Checking
+    `;
 
+    wrapper.appendChild(badge);
     shadow.appendChild(style);
-    shadow.appendChild(badge);
+    shadow.appendChild(wrapper);
 
-    // Insert after the link
-    if (linkElement.nextSibling) {
-      linkElement.parentNode.insertBefore(container, linkElement.nextSibling);
+    // Insert directly after the target DOM element
+    if (domElement.nextSibling) {
+      domElement.parentNode.insertBefore(container, domElement.nextSibling);
     } else {
-      linkElement.parentNode.appendChild(container);
+      domElement.parentNode.appendChild(container);
     }
 
-    this.indicators.set(linkElement, { container, shadow, badge, url });
+    this.indicators.set(domElement, { container, shadow, wrapper, badge, url });
   }
 
-  updateIndicator(linkElement, state) {
-    const data = this.indicators.get(linkElement);
+  updateIndicator(domElement, state) {
+    const data = this.indicators.get(domElement);
     if (!data) return;
-    
-    const { shadow, badge, url } = data;
-    
-    // Clear old download buttons
-    const oldBtn = shadow.querySelector('.tb-dl-btn');
+
+    const { shadow, wrapper, badge, url } = data;
+
+    // Clean up existing action buttons inside wrapper
+    const oldBtn = wrapper.querySelector('.tb-btn');
     if (oldBtn) oldBtn.remove();
 
     badge.className = 'tb-badge';
-    
-    switch(state) {
+
+    switch (state) {
       case window.TorBoxConstants.STATES.CHECKING:
         badge.classList.add('checking');
-        badge.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Checking...`;
+        badge.innerHTML = `
+          <svg class="tb-spinner" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-opacity="0.25"></circle>
+            <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg> Checking
+        `;
         break;
+
       case window.TorBoxConstants.STATES.CACHED:
         badge.classList.add('cached');
-        badge.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg> Cached`;
-        
-        // Add download button
+        badge.innerHTML = `
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+          </svg> Cached
+        `;
+
+        // Direct Download Action Button
         const dlBtn = document.createElement('button');
-        dlBtn.className = 'tb-dl-btn';
-        dlBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> DL`;
-        dlBtn.title = 'Download instantly with TorBox';
-        
+        dlBtn.className = 'tb-btn tb-btn-dl';
+        dlBtn.title = 'Instant direct download with TorBox';
+        dlBtn.innerHTML = `
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+          </svg> DL
+        `;
+
         dlBtn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          
-          if (dlBtn.classList.contains('downloading')) return;
-          
-          dlBtn.classList.add('downloading');
-          dlBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ...`;
-          
+          if (dlBtn.classList.contains('loading')) return;
+
+          dlBtn.classList.add('loading');
+          dlBtn.innerHTML = `
+            <svg class="tb-spinner" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-opacity="0.25"></circle>
+              <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg> ...
+          `;
+
           chrome.runtime.sendMessage({
             action: window.TorBoxConstants.MESSAGES.DOWNLOAD_CACHED,
             url: url
           }, (response) => {
             if (response && response.success && response.downloadUrl) {
-              dlBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Started`;
+              dlBtn.innerHTML = `
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                </svg> Started
+              `;
               dlBtn.style.background = '#059669';
-              dlBtn.style.borderColor = '#047857';
-              dlBtn.title = 'Download started';
-              
-              // Trigger a normal browser download so IDM and other managers can intercept it
-              const a = document.createElement('a');
-              a.href = response.downloadUrl;
-              a.style.display = 'none';
-              document.body.appendChild(a);
-              a.click();
-              setTimeout(() => a.remove(), 1000);
+
+              // Trigger click in webpage DOM so IDM and external download managers catch it
+              if (response.engine !== 'browser') {
+                const a = document.createElement('a');
+                a.href = response.downloadUrl;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => a.remove(), 1500);
+              }
             } else {
-              dlBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Failed`;
+              dlBtn.classList.remove('loading');
+              dlBtn.innerHTML = `⚠️ Failed`;
               dlBtn.style.background = '#dc2626';
-              dlBtn.style.borderColor = '#b91c1c';
-              dlBtn.title = response ? response.error : 'Unknown error';
-              dlBtn.classList.remove('downloading');
+              dlBtn.title = response ? response.error : 'Download failed';
             }
           });
         });
-        
-        shadow.appendChild(dlBtn);
+
+        wrapper.appendChild(dlBtn);
         break;
+
       case window.TorBoxConstants.STATES.NOT_CACHED:
         badge.classList.add('not-cached');
-        badge.innerHTML = `<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg> Not cached`;
-        
+        badge.innerHTML = `
+          <svg viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+          </svg> Not cached
+        `;
+
         const uploadBtn = document.createElement('button');
-        uploadBtn.className = 'tb-dl-btn';
-        uploadBtn.style.background = '#7c3aed';
-        uploadBtn.style.borderColor = '#6d28d9';
-        uploadBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg> To TB`;
-        uploadBtn.title = 'Download to TorBox';
-        
+        uploadBtn.className = 'tb-btn tb-btn-cloud';
+        uploadBtn.title = 'Add to TorBox cloud download queue';
+        uploadBtn.innerHTML = `
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+          </svg> To TB
+        `;
+
         uploadBtn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          
-          if (uploadBtn.classList.contains('downloading')) return;
-          
-          uploadBtn.classList.add('downloading');
-          uploadBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> ...`;
-          
+          if (uploadBtn.classList.contains('loading')) return;
+
+          uploadBtn.classList.add('loading');
+          uploadBtn.innerHTML = `
+            <svg class="tb-spinner" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-opacity="0.25"></circle>
+              <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg> ...
+          `;
+
+          const isMagnet = url.startsWith('magnet:?');
+          const isUsenet = url.toLowerCase().endsWith('.nzb');
+          const actionMsg = isMagnet
+            ? window.TorBoxConstants.MESSAGES.CREATE_TORRENT
+            : (isUsenet ? window.TorBoxConstants.MESSAGES.CREATE_USENET : window.TorBoxConstants.MESSAGES.CREATE_WEBDL);
+
           chrome.runtime.sendMessage({
-            action: window.TorBoxConstants.MESSAGES.CREATE_WEBDL,
+            action: actionMsg,
             url: url
           }, (response) => {
             if (response && response.success) {
-              uploadBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Added`;
+              uploadBtn.innerHTML = `
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                </svg> Added
+              `;
               uploadBtn.style.background = '#059669';
-              uploadBtn.style.borderColor = '#047857';
-              uploadBtn.title = 'Added to TorBox';
             } else {
-              uploadBtn.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Failed`;
+              uploadBtn.classList.remove('loading');
+              uploadBtn.innerHTML = `⚠️ Failed`;
               uploadBtn.style.background = '#dc2626';
-              uploadBtn.style.borderColor = '#b91c1c';
-              uploadBtn.title = response ? response.error : 'Unknown error';
-              uploadBtn.classList.remove('downloading');
+              uploadBtn.title = response ? response.error : 'Failed to add to TorBox';
             }
           });
         });
-        
-        shadow.appendChild(uploadBtn);
+
+        wrapper.appendChild(uploadBtn);
         break;
+
       case window.TorBoxConstants.STATES.ERROR:
         badge.classList.add('error');
-        badge.innerHTML = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Check failed`;
+        badge.innerHTML = `⚠️ Failed`;
         break;
+
       case window.TorBoxConstants.STATES.UNSUPPORTED:
-        // Optional: hide or remove for unsupported
         data.container.style.display = 'none';
         break;
     }
   }
 
-  removeIndicator(linkElement) {
-    const data = this.indicators.get(linkElement);
+  removeIndicator(domElement) {
+    const data = this.indicators.get(domElement);
     if (data) {
       data.container.remove();
-      this.indicators.delete(linkElement);
+      this.indicators.delete(domElement);
     }
   }
 
   createStreamIndicator(url, state) {
-    this.removeStreamIndicator(); // Clean up existing
+    this.removeStreamIndicator();
 
     const container = document.createElement('div');
     container.id = 'torbox-stream-indicator';
     container.style.position = 'fixed';
-    container.style.top = '20px';
-    container.style.right = '20px';
-    container.style.zIndex = '999999';
-    container.style.pointerEvents = 'auto'; // allow clicking
+    container.style.top = '24px';
+    container.style.right = '24px';
+    container.style.zIndex = '2147483647';
 
     document.body.appendChild(container);
-
     this.streamIndicator = container;
 
     const shadow = container.attachShadow({ mode: 'closed' });
     const style = document.createElement('style');
     style.textContent = `
-      .tb-stream-panel {
+      .tb-floating-panel {
         display: flex;
         align-items: center;
-        background: rgba(17, 24, 39, 0.9);
-        backdrop-filter: blur(8px);
-        padding: 6px 12px;
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-        color: white;
+        gap: 8px;
+        background: rgba(15, 23, 42, 0.92);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        padding: 8px 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        color: #f8fafc;
+        animation: tb-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        user-select: none;
       }
-      .tb-badge {
+      @keyframes tb-slide-in {
+        from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .tb-logo-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 700;
         font-size: 13px;
-        font-weight: 600;
-        margin-right: 8px;
+        letter-spacing: -0.2px;
       }
-      .tb-badge.cached { color: #34d399; }
-      .tb-badge.not-cached { color: #9ca3af; }
+      .tb-status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .tb-status-dot.cached { background: #10b981; box-shadow: 0 0 8px #10b981; }
+      .tb-status-dot.not-cached { background: #94a3b8; }
       
       .tb-action-btn {
-        padding: 4px 10px;
-        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 12px;
+        border-radius: 8px;
         font-size: 12px;
-        font-weight: bold;
+        font-weight: 700;
         border: none;
         cursor: pointer;
-        transition: background 0.2s;
+        transition: all 0.2s ease;
         color: white;
       }
-      .tb-btn-dl { background: #3b82f6; }
-      .tb-btn-dl:hover { background: #2563eb; }
-      .tb-btn-dl.loading { background: #6b7280; cursor: not-allowed; }
-      
-      .tb-btn-upload { background: #8b5cf6; }
-      .tb-btn-upload:hover { background: #7c3aed; }
-      .tb-btn-upload.loading { background: #6b7280; cursor: not-allowed; }
-      
+      .tb-btn-dl {
+        background: linear-gradient(135deg, #10b981, #059669);
+        box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+      }
+      .tb-btn-dl:hover {
+        background: linear-gradient(135deg, #059669, #047857);
+        transform: translateY(-1px);
+      }
+      .tb-btn-cloud {
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+      }
+      .tb-btn-cloud:hover {
+        background: linear-gradient(135deg, #4f46e5, #4338ca);
+        transform: translateY(-1px);
+      }
       .tb-close-btn {
-        margin-left: 8px;
         background: transparent;
         border: none;
-        color: #9ca3af;
+        color: #94a3b8;
         cursor: pointer;
-        font-size: 18px;
+        padding: 4px 6px;
+        border-radius: 6px;
+        font-size: 14px;
         line-height: 1;
-        padding: 0 4px;
         transition: color 0.2s;
       }
       .tb-close-btn:hover {
-        color: white;
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.1);
       }
     `;
-    
+
+    const isCached = state === window.TorBoxConstants.STATES.CACHED;
     const panel = document.createElement('div');
-    panel.className = 'tb-stream-panel';
-    
-    const badge = document.createElement('div');
-    badge.className = 'tb-badge';
-    
-    if (state === window.TorBoxConstants.STATES.CACHED) {
-      badge.textContent = '🟢 TorBox Cached';
-      badge.classList.add('cached');
-      
+    panel.className = 'tb-floating-panel';
+
+    const logoBadge = document.createElement('div');
+    logoBadge.className = 'tb-logo-badge';
+    logoBadge.innerHTML = `
+      <span class="tb-status-dot ${isCached ? 'cached' : 'not-cached'}"></span>
+      <span>${isCached ? 'TorBox Cached' : 'TorBox'}</span>
+    `;
+
+    panel.appendChild(logoBadge);
+
+    if (isCached) {
       const dlBtn = document.createElement('button');
       dlBtn.className = 'tb-action-btn tb-btn-dl';
-      dlBtn.innerHTML = '⚡ DL';
-      dlBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (dlBtn.classList.contains('loading')) return;
-        dlBtn.classList.add('loading');
-        dlBtn.textContent = '⏳ ...';
-        
+      dlBtn.innerHTML = '⚡ Instant DL';
+      dlBtn.addEventListener('click', () => {
+        dlBtn.textContent = '⏳ Starting...';
         chrome.runtime.sendMessage({
           action: window.TorBoxConstants.MESSAGES.DOWNLOAD_CACHED,
           url: url
         }, (res) => {
-          if (res && res.success) {
-            dlBtn.textContent = '✔️ Started';
-            dlBtn.style.background = '#10b981';
-            const a = document.createElement('a');
-            a.href = res.downloadUrl;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => a.remove(), 1000);
+          if (res && res.success && res.downloadUrl) {
+            dlBtn.textContent = '✔️ Downloading';
+            if (res.engine !== 'browser') {
+              const a = document.createElement('a');
+              a.href = res.downloadUrl;
+              a.style.display = 'none';
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(() => a.remove(), 1500);
+            }
           } else {
             dlBtn.textContent = '⚠️ Failed';
-            dlBtn.style.background = '#ef4444';
-            dlBtn.classList.remove('loading');
           }
         });
       });
-      panel.appendChild(badge);
       panel.appendChild(dlBtn);
     } else {
-      badge.textContent = '⚪ Not cached';
-      badge.classList.add('not-cached');
-      
-      const uploadBtn = document.createElement('button');
-      uploadBtn.className = 'tb-action-btn tb-btn-upload';
-      uploadBtn.innerHTML = '☁️ DL to TB';
-      uploadBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (uploadBtn.classList.contains('loading')) return;
-        uploadBtn.classList.add('loading');
-        uploadBtn.textContent = '⏳ Requesting...';
-        
+      const cloudBtn = document.createElement('button');
+      cloudBtn.className = 'tb-action-btn tb-btn-cloud';
+      cloudBtn.innerHTML = '☁️ Add to TorBox';
+      cloudBtn.addEventListener('click', () => {
+        cloudBtn.textContent = '⏳ Adding...';
         chrome.runtime.sendMessage({
           action: window.TorBoxConstants.MESSAGES.CREATE_WEBDL,
           url: url
         }, (res) => {
           if (res && res.success) {
-            uploadBtn.textContent = '✔️ Added to TorBox';
-            uploadBtn.style.background = '#10b981';
+            cloudBtn.textContent = '✔️ Added';
           } else {
-            uploadBtn.textContent = '⚠️ Failed';
-            uploadBtn.style.background = '#ef4444';
-            uploadBtn.classList.remove('loading');
+            cloudBtn.textContent = '⚠️ Failed';
           }
         });
       });
-      panel.appendChild(badge);
-      panel.appendChild(uploadBtn);
+      panel.appendChild(cloudBtn);
     }
-    
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'tb-close-btn';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.title = 'Close indicator';
-    closeBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.removeStreamIndicator();
-    });
+    closeBtn.innerHTML = '✕';
+    closeBtn.title = 'Dismiss';
+    closeBtn.addEventListener('click', () => this.removeStreamIndicator());
     panel.appendChild(closeBtn);
 
-    // Auto-hide after 5 seconds, cancel if hovered
-    let hideTimer = setTimeout(() => {
-      this.removeStreamIndicator();
-    }, 5000);
-    
+    let hideTimeout = setTimeout(() => this.removeStreamIndicator(), 6000);
     panel.addEventListener('mouseenter', () => {
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
-      }
+      if (hideTimeout) clearTimeout(hideTimeout);
     });
 
     shadow.appendChild(style);

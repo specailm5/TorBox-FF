@@ -1,30 +1,42 @@
 {
   "manifest_version": 3,
-  "name": "TorBox-FF",
-  "version": "1.0.0",
-  "description": "Scans web pages for supported download links, checks if they are cached on TorBox, and allows one-click downloading.",
+  "name": "TorBox Debrid & Cache Manager",
+  "version": "2.0.0",
+  "description": "Scans pages for torrents, magnet links, and file hosters, checks TorBox cache in real-time, and enables instant direct downloads.",
   "permissions": [
     "storage",
     "downloads",
     "scripting",
-    "contextMenus"
+    "contextMenus",
+    "notifications"
   ],
   "host_permissions": [
     "https://api.torbox.app/*",
     "<all_urls>"
   ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "torbox-extension@torbox.app",
+      "strict_min_version": "109.0"
+    }
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "background/service-worker.js"
+    "service_worker": "background/service-worker.js",
+    "scripts": ["background/service-worker.js"]
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "exclude_matches": ["*://*.torbox.app/*", "*://*.google.com/*"],
+      "exclude_matches": [
+        "*://*.torbox.app/*",
+        "*://*.google.com/search*",
+        "*://*.google.com/imghp*"
+      ],
       "css": ["content/content.css"],
       "js": [
         "shared/constants.js",
@@ -38,7 +50,7 @@
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "TorBox-FF",
+    "default_title": "TorBox Debrid & Cache Manager",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
