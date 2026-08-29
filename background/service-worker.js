@@ -1,6 +1,15 @@
 /**
  * TorBox Background Service Worker
- * Handles API communication, persistent caching, native downloads, and context menus.
+ * Full TorBox API v1 integration:
+ * - POST-based high-performance batch cache checking
+ * - Instant CDN downloads (multi-file & full zip)
+ * - Real-time video/audio streaming links
+ * - Magnet to .torrent conversion
+ * - Torrent inspection & peer lookup
+ * - Device code OAuth authentication
+ * - Direct cloud storage offloading (GDrive, OneDrive, Dropbox, etc.)
+ * - Background download completion alerts via alarms
+ * - Enhanced context menus
  */
 
 // Import shared dependencies
@@ -12,6 +21,7 @@ try {
 
 const HOSTER_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 const URL_CACHE_TTL = 10 * 60 * 1000;    // 10 minutes
+const ALARM_CHECK_DOWNLOADS = 'torbox_check_downloads_alarm';
 
 /**
  * Storage-backed Cache Controller
@@ -53,7 +63,7 @@ async function getApiKey() {
 async function apiRequest(endpoint, method = 'GET', body = null) {
   const apiKey = await getApiKey();
   if (!apiKey) {
-    throw new Error('API key is not configured. Please open Settings.');
+    throw new Error('API key is not configured. Please open Settings or Sign in.');
   }
 
   const headers = {
@@ -135,12 +145,12 @@ async function startNativeDownload(downloadUrl, filename = null) {
 
   try {
     const settings = await chrome.storage.local.get(['skipSaveDialog']);
-    const shouldSkipSaveAs = settings.skipSaveDialog !== false; // default true to skip save window
+    const shouldSkipSaveAs = settings.skipSaveDialog !== false;
 
     if (chrome.downloads && chrome.downloads.download) {
       const downloadOptions = {
         url: downloadUrl,
-        saveAs: !shouldSkipSaveAs, // false = skip the save window completely
+        saveAs: !shouldSkipSaveAs,
         conflictAction: 'uniquify'
       };
       if (filename) downloadOptions.filename = filename;
@@ -181,9 +191,22 @@ async function getUserInfo() {
         totalDownloaded: u.total_downloaded || 0,
         bandwidthLimit: u.daily_bandwidth_limit || 0,
         bandwidthUsed: u.daily_bandwidth_used || 0,
-        serverTime: u.server_time
+        serverTime: u.server_time,
+        settings: u.settings || {}
       }
     };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Fetches detailed user statistics and bandwidth trends.
+ */
+async function getUserStats() {
+  try {
+    const data = await apiRequest('/v1/api/user/stats?general=true&bandwidth=true&bandwidth_grouping=day');
+    return { success: true, stats: data.data || {} };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -229,7 +252,6 @@ async function getHosters() {
       }
     });
 
-    // Merge fallback defaults to ensure comprehensive coverage
     TorBoxConstants.DEFAULT_HOSTERS.forEach(d => hosterSet.add(d.toLowerCase()));
     TorBoxConstants.DEFAULT_STREAMS.forEach(d => streamSet.add(d.toLowerCase()));
 
@@ -254,9 +276,9 @@ async function getHosters() {
 }
 
 /**
- * Checks cache availability for a batch of URLs (WebDL, Torrents, Usenet).
+ * Checks cache availability for a batch of URLs using POST requests with JSON payloads.
  */
-async function checkCache(urls) {
+async function checkCache(urls, listFiles = false) {
   if (!Array.isArray(urls) || urls.length === 0) return {};
   const uniqueUrls = [...new Set(urls.filter(Boolean))];
   const results = {};
@@ -271,7 +293,7 @@ async function checkCache(urls) {
   // Check persistent cache
   for (const url of uniqueUrls) {
     const cachedEntry = urlStorageCache[url];
-    if (cachedEntry && (now - (cachedEntry.timestamp || 0) < URL_CACHE_TTL)) {
+    if (cachedEntry && (now - (cachedEntry.timestamp || 0) < URL_CACHE_TTL) && (!listFiles || cachedEntry.files)) {
       results[url] = cachedEntry.state;
     } else {
       if (url.startsWith('magnet:?')) {
@@ -282,7 +304,6 @@ async function checkCache(urls) {
           results[url] = TorBoxConstants.STATES.UNSUPPORTED;
         }
       } else if (url.toLowerCase().endsWith('.torrent')) {
-        // Direct torrent URLs
         torrentUrlsToCheck.push({ url, hash: md5(url) });
       } else if (url.toLowerCase().endsWith('.nzb')) {
         usenetUrlsToCheck.push(url);
@@ -292,16 +313,15 @@ async function checkCache(urls) {
     }
   }
 
-  const CHUNK_SIZE = 80;
+  const CHUNK_SIZE = 100;
 
-  // 1. Process WebDL URLs
+  // 1. Process WebDL URLs via POST
   for (let i = 0; i < webUrlsToCheck.length; i += CHUNK_SIZE) {
     const chunk = webUrlsToCheck.slice(i, i + CHUNK_SIZE);
     const hashes = chunk.map(u => md5(u));
-    const hashStr = hashes.join(',');
 
     try {
-      const data = await apiRequest(`/v1/api/webdl/checkcached?hash=${hashStr}&format=object`);
+      const data = await apiRequest('/v1/api/webdl/checkcached?format=object', 'POST', { hashes });
       const cacheData = data.data || {};
 
       for (let j = 0; j < chunk.length; j++) {
@@ -327,29 +347,36 @@ async function checkCache(urls) {
     }
   }
 
-  // 2. Process Torrent / Magnet URLs
+  // 2. Process Torrent / Magnet URLs via POST
   for (let i = 0; i < torrentUrlsToCheck.length; i += CHUNK_SIZE) {
     const chunk = torrentUrlsToCheck.slice(i, i + CHUNK_SIZE);
     const hashes = chunk.map(item => item.hash);
-    const hashStr = hashes.join(',');
 
     try {
-      const data = await apiRequest(`/v1/api/torrents/checkcached?hash=${hashStr}&format=object`);
+      const listFilesParam = listFiles ? '&list_files=true' : '';
+      const data = await apiRequest(`/v1/api/torrents/checkcached?format=object${listFilesParam}`, 'POST', { hashes });
       const cacheData = data.data || {};
 
       for (let j = 0; j < chunk.length; j++) {
         const { url, hash } = chunk[j];
 
         let isCached = false;
+        let fileList = null;
+
         if (Array.isArray(cacheData)) {
-          isCached = !!cacheData.find(item => (typeof item === 'object' ? item.hash === hash : item === hash));
-        } else {
-          isCached = !!cacheData[hash];
+          const found = cacheData.find(item => (typeof item === 'object' ? item.hash === hash : item === hash));
+          isCached = !!found;
+          if (found && typeof found === 'object' && found.files) fileList = found.files;
+        } else if (cacheData[hash]) {
+          isCached = true;
+          if (typeof cacheData[hash] === 'object' && cacheData[hash].files) {
+            fileList = cacheData[hash].files;
+          }
         }
 
         const state = isCached ? TorBoxConstants.STATES.CACHED : TorBoxConstants.STATES.NOT_CACHED;
         results[url] = state;
-        urlStorageCache[url] = { state, timestamp: now };
+        urlStorageCache[url] = { state, files: fileList, timestamp: now };
       }
     } catch (error) {
       console.warn("Torrent cache check batch error:", error.message);
@@ -359,14 +386,13 @@ async function checkCache(urls) {
     }
   }
 
-  // 3. Process Usenet URLs
+  // 3. Process Usenet URLs via POST
   for (let i = 0; i < usenetUrlsToCheck.length; i += CHUNK_SIZE) {
     const chunk = usenetUrlsToCheck.slice(i, i + CHUNK_SIZE);
     const hashes = chunk.map(u => md5(u));
-    const hashStr = hashes.join(',');
 
     try {
-      const data = await apiRequest(`/v1/api/usenet/checkcached?hash=${hashStr}&format=object`);
+      const data = await apiRequest('/v1/api/usenet/checkcached?format=object', 'POST', { hashes });
       const cacheData = data.data || {};
 
       for (let j = 0; j < chunk.length; j++) {
@@ -399,29 +425,45 @@ async function checkCache(urls) {
 
 /**
  * Downloads a cached item instantly, requesting CDN direct link and triggering native download.
+ * Supports specific fileId if provided.
  */
-async function downloadCached(url) {
+async function downloadCached(url, fileId = null) {
   try {
     const isMagnet = url.startsWith('magnet:?');
-    const isTorrentFile = url.toLowerCase().endsWith('.torrent');
-    const isUsenet = url.toLowerCase().endsWith('.nzb');
+    const isTorrentFile = url.toLowerCase().endsWith('.torrent') || url.toLowerCase().includes('.torrent?');
+    const isUsenet = url.toLowerCase().endsWith('.nzb') || url.toLowerCase().includes('.nzb?');
     const apiKey = await getApiKey();
 
     if (!apiKey) {
-      throw new Error("No API key configured. Please open Settings.");
+      throw new Error("No API key configured. Please open Settings or Sign in.");
     }
 
     let downloadUrl = null;
 
     if (isMagnet || isTorrentFile) {
-      // 1. Create torrent with seed/add
       const formData = new FormData();
       if (isMagnet) {
         formData.append('magnet', url);
       } else {
-        formData.append('link', url);
+        try {
+          const tRes = await fetch(url);
+          if (tRes.ok) {
+            const blob = await tRes.blob();
+            formData.append('file', blob, 'download.torrent');
+          } else {
+            throw new Error(`Failed to fetch .torrent file: HTTP ${tRes.status}`);
+          }
+        } catch (fetchErr) {
+          const extractedHash = TorBoxUtils.extractMagnetHash(url);
+          if (extractedHash) {
+            formData.append('magnet', extractedHash);
+          } else {
+            formData.append('link', url);
+          }
+        }
       }
       formData.append('allow_zip', 'true');
+      formData.append('seed', '1');
 
       const createRes = await fetch(`${TorBoxConstants.API_BASE}/v1/api/torrents/createtorrent`, {
         method: 'POST',
@@ -431,7 +473,9 @@ async function downloadCached(url) {
       const createData = await createRes.json();
 
       if (!createRes.ok || createData.success === false) {
-        throw new Error(createData.detail || createData.error || 'Failed to create torrent download');
+        let err = createData.detail || createData.error || 'Failed to create torrent download';
+        if (typeof err === 'object') err = Array.isArray(err) ? err.map(e => e.msg || JSON.stringify(e)).join(', ') : JSON.stringify(err);
+        throw new Error(err);
       }
 
       const torrentId = createData.data ? (createData.data.torrent_id || createData.data.id) : null;
@@ -439,18 +483,13 @@ async function downloadCached(url) {
         throw new Error("Torrent ID was not returned by TorBox.");
       }
 
-      // Request direct CDN download link
-      const reqUrl = `${TorBoxConstants.API_BASE}/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${torrentId}&zip_link=true`;
-      const dlRes = await fetch(reqUrl);
-      const dlData = await dlRes.json();
-
-      if (!dlRes.ok || dlData.success === false) {
-        throw new Error(dlData.detail || dlData.error || 'Failed to generate direct download link.');
+      const dlResult = await requestDirectLink(torrentId, 'torrent', fileId, fileId === null);
+      if (!dlResult.success || !dlResult.downloadUrl) {
+        throw new Error(dlResult.error || 'Failed to generate direct download link.');
       }
-      downloadUrl = dlData.data;
+      downloadUrl = dlResult.downloadUrl;
 
     } else if (isUsenet) {
-      // 2. Create Usenet
       const formData = new FormData();
       formData.append('link', url);
 
@@ -462,22 +501,21 @@ async function downloadCached(url) {
       const createData = await createRes.json();
 
       if (!createRes.ok || createData.success === false) {
-        throw new Error(createData.detail || createData.error || 'Failed to create usenet download');
+        let err = createData.detail || createData.error || 'Failed to create usenet download';
+        if (typeof err === 'object') err = Array.isArray(err) ? err.map(e => e.msg || JSON.stringify(e)).join(', ') : JSON.stringify(err);
+        throw new Error(err);
       }
 
       const usenetId = createData.data ? (createData.data.usenet_id || createData.data.id) : null;
       if (!usenetId) throw new Error("Usenet ID not returned.");
 
-      const reqUrl = `${TorBoxConstants.API_BASE}/v1/api/usenet/requestdl?token=${apiKey}&usenet_id=${usenetId}&zip_link=true`;
-      const dlRes = await fetch(reqUrl);
-      const dlData = await dlRes.json();
-      if (!dlRes.ok || dlData.success === false) {
-        throw new Error(dlData.detail || dlData.error || 'Failed to generate usenet download link');
+      const dlResult = await requestDirectLink(usenetId, 'usenet', fileId, fileId === null);
+      if (!dlResult.success || !dlResult.downloadUrl) {
+        throw new Error(dlResult.error || 'Failed to generate usenet download link');
       }
-      downloadUrl = dlData.data;
+      downloadUrl = dlResult.downloadUrl;
 
     } else {
-      // 3. WebDL
       const formData = new FormData();
       formData.append('link', url);
       formData.append('add_only_if_cached', 'true');
@@ -490,16 +528,21 @@ async function downloadCached(url) {
       const createData = await createRes.json();
 
       if (!createRes.ok || createData.success === false) {
-        throw new Error(createData.detail || createData.error || 'Failed to create WebDL download');
+        let err = createData.detail || createData.error || 'Failed to create WebDL download';
+        if (typeof err === 'object') err = Array.isArray(err) ? err.map(e => e.msg || JSON.stringify(e)).join(', ') : JSON.stringify(err);
+        throw new Error(err);
       }
 
       const webId = createData.data ? (createData.data.webdownload_id || createData.data.webdl_id || createData.data.id) : null;
       if (!webId) throw new Error("WebDL ID not returned.");
 
-      downloadUrl = `${TorBoxConstants.API_BASE}/v1/api/webdl/requestdl?token=${apiKey}&web_id=${webId}&redirect=true`;
+      const dlResult = await requestDirectLink(webId, 'webdl', fileId, false);
+      if (!dlResult.success || !dlResult.downloadUrl) {
+        throw new Error(dlResult.error || 'Failed to generate WebDL download link');
+      }
+      downloadUrl = dlResult.downloadUrl;
     }
 
-    // Check download engine preference (idm vs browser)
     const settings = await chrome.storage.local.get(['downloadEngine']);
     const engine = settings.downloadEngine || 'idm';
 
@@ -519,16 +562,17 @@ async function downloadCached(url) {
 }
 
 /**
- * Creates an uncached download on TorBox cloud.
+ * Creates a download on TorBox cloud (for torrents, magnets, filehosters, and usenet).
+ * Adds the link to user's TorBox account and triggers notifications.
  */
 async function createCloudDownload(url) {
   try {
     const apiKey = await getApiKey();
-    if (!apiKey) throw new Error('No API key configured');
+    if (!apiKey) throw new Error('No API key configured. Please open Settings or Sign in.');
 
     const isMagnet = url.startsWith('magnet:?');
-    const isTorrentFile = url.toLowerCase().endsWith('.torrent');
-    const isUsenet = url.toLowerCase().endsWith('.nzb');
+    const isTorrentFile = url.toLowerCase().endsWith('.torrent') || url.toLowerCase().includes('.torrent?');
+    const isUsenet = url.toLowerCase().endsWith('.nzb') || url.toLowerCase().includes('.nzb?');
 
     let endpoint = '/v1/api/webdl/createwebdownload';
     const formData = new FormData();
@@ -536,44 +580,318 @@ async function createCloudDownload(url) {
     if (isMagnet) {
       endpoint = '/v1/api/torrents/createtorrent';
       formData.append('magnet', url);
+      formData.append('allow_zip', 'true');
+      formData.append('seed', '1');
+      formData.append('as_queued', 'false');
     } else if (isTorrentFile) {
-      endpoint = '/v1/api/torrents/createtorrent';
-      formData.append('link', url);
+      let torrentBlob = null;
+      try {
+        const fileRes = await fetch(url);
+        if (fileRes.ok) {
+          torrentBlob = await fileRes.blob();
+        }
+      } catch (e) {
+        console.warn("Could not fetch .torrent file directly:", e.message);
+      }
+
+      if (torrentBlob) {
+        endpoint = '/v1/api/torrents/createtorrent';
+        formData.append('file', torrentBlob, 'download.torrent');
+        formData.append('allow_zip', 'true');
+        formData.append('seed', '1');
+        formData.append('as_queued', 'false');
+      } else {
+        endpoint = '/v1/api/webdl/createwebdownload';
+        formData.append('link', url);
+        formData.append('as_queued', 'false');
+      }
     } else if (isUsenet) {
       endpoint = '/v1/api/usenet/createusenetdownload';
       formData.append('link', url);
+      formData.append('post_processing', '-1');
+      formData.append('as_queued', 'false');
     } else {
       formData.append('link', url);
+      formData.append('as_queued', 'false');
     }
 
-    const response = await fetch(`${TorBoxConstants.API_BASE}${endpoint}`, {
+    let response = await fetch(`${TorBoxConstants.API_BASE}${endpoint}`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}` },
       body: formData
     });
 
-    const data = await response.json();
+    let data = await response.json();
+
+    // Fallback to async endpoint if primary failed
+    if (!response.ok || data.success === false) {
+      if (isMagnet) {
+        try {
+          const asyncFormData = new FormData();
+          asyncFormData.append('magnet', url);
+          const asyncRes = await fetch(`${TorBoxConstants.API_BASE}/v1/api/torrents/asynccreatetorrent`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+            body: asyncFormData
+          });
+          const asyncData = await asyncRes.json();
+          if (asyncRes.ok && asyncData.success !== false) {
+            data = asyncData;
+            response = asyncRes;
+          }
+        } catch (e) {}
+      } else if (!isUsenet && !isTorrentFile) {
+        try {
+          const asyncFormData = new FormData();
+          asyncFormData.append('link', url);
+          const asyncRes = await fetch(`${TorBoxConstants.API_BASE}/v1/api/webdl/asynccreatewebdownload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+            body: asyncFormData
+          });
+          const asyncData = await asyncRes.json();
+          if (asyncRes.ok && asyncData.success !== false) {
+            data = asyncData;
+            response = asyncRes;
+          }
+        } catch (e) {}
+      }
+    }
+
     if (!response.ok || data.success === false) {
       let errDetail = data.detail || data.error || 'Failed to queue download on TorBox';
-      if (typeof errDetail === 'object') errDetail = JSON.stringify(errDetail);
+      if (typeof errDetail === 'object') {
+        errDetail = Array.isArray(errDetail) ? errDetail.map(e => e.msg || JSON.stringify(e)).join(', ') : JSON.stringify(errDetail);
+      }
+      showNotification('TorBox - Add Failed', errDetail, true);
       throw new Error(errDetail);
     }
 
-    return { success: true, data: data.data };
+    const successMsg = data.detail || 'Link queued to your TorBox cloud!';
+    showNotification('TorBox - Added to Cloud', successMsg);
+
+    return {
+      success: true,
+      data: data.data,
+      detail: successMsg
+    };
+  } catch (error) {
+    console.error("createCloudDownload error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Generates a clean direct CDN download/stream URL for an existing item by ID.
+ * Returns { success: true, downloadUrl: string }
+ */
+async function requestDirectLink(id, type = 'torrent', fileId = null, zipLink = false) {
+  try {
+    const apiKey = await getApiKey();
+    if (!apiKey) throw new Error('No API key configured');
+
+    const fileParam = (fileId !== null && fileId !== undefined) ? `&file_id=${fileId}` : '';
+    const zipParam = zipLink ? '&zip_link=true' : '&zip_link=false';
+    let endpoint = '';
+
+    if (type === 'webdl') {
+      endpoint = `${TorBoxConstants.API_BASE}/v1/api/webdl/requestdl?token=${encodeURIComponent(apiKey)}&web_id=${id}${fileParam}${zipParam}&redirect=false`;
+    } else if (type === 'usenet') {
+      endpoint = `${TorBoxConstants.API_BASE}/v1/api/usenet/requestdl?token=${encodeURIComponent(apiKey)}&usenet_id=${id}${fileParam}${zipParam}&redirect=false`;
+    } else {
+      endpoint = `${TorBoxConstants.API_BASE}/v1/api/torrents/requestdl?token=${encodeURIComponent(apiKey)}&torrent_id=${id}${fileParam}${zipParam}&redirect=false`;
+    }
+
+    const res = await fetch(endpoint);
+    let data;
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      try { data = JSON.parse(text); } catch (e) { data = text; }
+    }
+
+    if (res.ok && data) {
+      if (data.success !== false) {
+        let directUrl = null;
+        if (typeof data === 'string' && data.startsWith('http')) {
+          directUrl = data;
+        } else if (data.data) {
+          if (typeof data.data === 'string') directUrl = data.data;
+          else if (typeof data.data === 'object') directUrl = data.data.url || data.data.stream_url || data.data.download_url || data.data.link;
+        }
+
+        if (directUrl) {
+          return { success: true, downloadUrl: directUrl };
+        }
+      }
+    }
+
+    const errMsg = (data && (data.detail || data.error || data.message)) || `Server returned HTTP ${res.status}`;
+    throw new Error(typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg);
+  } catch (error) {
+    console.warn("requestDirectLink error:", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+
+
+/**
+ * Requests CDN download URL for an item by ID and optionally initiates browser download.
+ */
+async function requestDownloadById(id, type, fileId = null) {
+  try {
+    const zipLink = (fileId === null || fileId === undefined);
+    const dlRes = await requestDirectLink(id, type, fileId, zipLink);
+
+    if (!dlRes.success || !dlRes.downloadUrl) {
+      throw new Error(dlRes.error || 'Failed to generate download link');
+    }
+
+    const downloadUrl = dlRes.downloadUrl;
+    const settings = await chrome.storage.local.get(['downloadEngine']);
+    const engine = settings.downloadEngine || 'idm';
+
+    if (engine === 'browser') {
+      await startNativeDownload(downloadUrl);
+    }
+
+    return { success: true, downloadUrl, engine };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+
+
+/**
+ * Converts a magnet link to a .torrent file.
+ */
+async function magnetToFile(magnetUrl) {
+  try {
+    const apiKey = await getApiKey();
+    if (!apiKey) throw new Error('No API key configured');
+
+    const res = await apiRequest('/v1/api/torrents/magnettofile', 'POST', { magnet: magnetUrl });
+    if (res && res.success && res.data) {
+      return { success: true, torrentData: res.data };
+    }
+    throw new Error(res.detail || res.error || 'Failed to convert magnet to torrent');
   } catch (error) {
     return { success: false, error: error.message };
   }
 }
 
 /**
- * Retrieves all active and cached downloads from the user's TorBox account.
+ * Retrieves torrent metadata (seeders, peers, file tree).
+ */
+async function getTorrentInfo(hashOrMagnet) {
+  try {
+    const isMagnet = hashOrMagnet.startsWith('magnet:?');
+    const query = isMagnet
+      ? `magnet=${encodeURIComponent(hashOrMagnet)}&use_cache_lookup=true`
+      : `hash=${hashOrMagnet}&use_cache_lookup=true`;
+
+    const res = await apiRequest(`/v1/api/torrents/torrentinfo?${query}`);
+    return { success: true, info: res.data || {} };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Starts Device Code OAuth Authorization flow.
+ */
+async function startDeviceAuth() {
+  try {
+    const response = await fetch(`${TorBoxConstants.API_BASE}/v1/api/user/auth/device/start?app=TorBox%20Extension`);
+    const data = await response.json();
+    if (!response.ok || data.success === false) {
+      throw new Error(data.detail || data.error || 'Failed to start device authorization');
+    }
+    return { success: true, authData: data.data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Checks token for a pending Device Code Authorization.
+ */
+async function checkDeviceAuthToken(deviceCode) {
+  try {
+    const response = await fetch(`${TorBoxConstants.API_BASE}/v1/api/user/auth/device/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_code: deviceCode })
+    });
+    const data = await response.json();
+
+    if (response.ok && data.success && data.data && data.data.token) {
+      const token = data.data.token;
+      await chrome.storage.local.set({ torboxApiKey: token });
+      return { success: true, token };
+    }
+
+    return {
+      success: false,
+      error: data.detail || data.error || 'Authorization pending or expired'
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Pushes item to connected cloud storage (Google Drive, Dropbox, OneDrive, Gofile, 1Fichier, Pixeldrain).
+ */
+async function sendToCloud(id, fileId = null, type = 'torrent', provider = 'googledrive', userToken = null) {
+  try {
+    const body = {
+      id: parseInt(id),
+      type: type,
+      zip: fileId === null
+    };
+    if (fileId !== null) body.file_id = parseInt(fileId);
+
+    if (provider === 'dropbox' && userToken) body.dropbox_token = userToken;
+    if (provider === 'onedrive' && userToken) body.onedrive_token = userToken;
+    if (provider === 'googledrive' && userToken) body.google_token = userToken;
+    if (provider === 'gofile' && userToken) body.gofile_token = userToken;
+    if (provider === '1fichier' && userToken) body.onefichier_token = userToken;
+    if (provider === 'pixeldrain' && userToken) body.pixeldrain_token = userToken;
+
+    const res = await apiRequest(`/v1/api/integration/${provider}`, 'POST', body);
+    return { success: true, data: res.data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Fetches connected OAuth integrations.
+ */
+async function getCloudIntegrations() {
+  try {
+    const res = await apiRequest('/v1/api/integration/oauth/me');
+    return { success: true, integrations: res.data || {} };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Retrieves all active, queued, and cached downloads from the user's TorBox account.
  */
 async function getActiveDownloads() {
   try {
-    const [torrentsRes, webdlRes, usenetRes] = await Promise.allSettled([
+    const [torrentsRes, webdlRes, usenetRes, queuedRes] = await Promise.allSettled([
       apiRequest('/v1/api/torrents/mylist?bypass_cache=true'),
       apiRequest('/v1/api/webdl/mylist?bypass_cache=true'),
-      apiRequest('/v1/api/usenet/mylist?bypass_cache=true')
+      apiRequest('/v1/api/usenet/mylist?bypass_cache=true'),
+      apiRequest('/v1/api/queued/getqueued?bypass_cache=true')
     ]);
 
     let downloads = [];
@@ -608,7 +926,8 @@ async function getActiveDownloads() {
           type: 'webdl',
           speed: w.download_speed || 0,
           eta: w.eta || null,
-          createdAt: w.created_at || null
+          createdAt: w.created_at || null,
+          files: w.files || []
         });
       });
     }
@@ -625,7 +944,27 @@ async function getActiveDownloads() {
           type: 'usenet',
           speed: u.download_speed || 0,
           eta: u.eta || null,
-          createdAt: u.created_at || null
+          createdAt: u.created_at || null,
+          files: u.files || []
+        });
+      });
+    }
+
+    // Queued items
+    if (queuedRes.status === 'fulfilled' && queuedRes.value && queuedRes.value.data) {
+      const list = Array.isArray(queuedRes.value.data) ? queuedRes.value.data : [];
+      list.forEach(q => {
+        downloads.push({
+          id: q.id,
+          name: q.name || 'Queued Item',
+          size: q.size || 0,
+          progress: 0,
+          status: 'queued',
+          type: q.type || 'torrent',
+          speed: 0,
+          eta: null,
+          createdAt: q.created_at || null,
+          isQueued: true
         });
       });
     }
@@ -641,7 +980,6 @@ async function getActiveDownloads() {
  */
 async function controlDownload(id, type, operation = 'delete') {
   try {
-    const apiKey = await getApiKey();
     let endpoint = '';
     const body = {};
 
@@ -657,6 +995,10 @@ async function controlDownload(id, type, operation = 'delete') {
       endpoint = '/v1/api/usenet/controlusenetdownload';
       body.usenet_id = id;
       body.operation = operation;
+    } else if (type === 'queued') {
+      endpoint = '/v1/api/queued/controlqueued';
+      body.queued_id = id;
+      body.operation = operation;
     } else {
       throw new Error(`Unknown type: ${type}`);
     }
@@ -669,47 +1011,50 @@ async function controlDownload(id, type, operation = 'delete') {
 }
 
 /**
- * Requests CDN download URL for an existing download item by ID.
+ * Background Alarm Handler for Completed Downloads Notifications
  */
-async function requestDownloadById(id, type) {
+let knownActiveJobIds = new Set();
+
+async function checkBackgroundDownloadStatus() {
   try {
     const apiKey = await getApiKey();
-    let downloadUrl = '';
+    if (!apiKey) return;
 
-    if (type === 'torrent') {
-      const reqUrl = `${TorBoxConstants.API_BASE}/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${id}&zip_link=true`;
-      const dlRes = await fetch(reqUrl);
-      const dlData = await dlRes.json();
-      if (!dlRes.ok || dlData.success === false) {
-        throw new Error(dlData.detail || dlData.error || 'Failed to generate download link');
+    const settings = await chrome.storage.local.get(['backgroundCompletionAlerts']);
+    if (settings.backgroundCompletionAlerts === false) return;
+
+    const res = await getActiveDownloads();
+    if (!res || !res.success || !res.downloads) return;
+
+    const currentDownloads = res.downloads;
+    const currentActiveIds = new Set();
+
+    for (const dl of currentDownloads) {
+      const isDone = dl.status === 'completed' || dl.status === 'cached';
+      if (!isDone && dl.status !== 'queued') {
+        currentActiveIds.add(dl.id);
+      } else if (isDone && knownActiveJobIds.has(dl.id)) {
+        // Transitioned from active to completed!
+        showNotification(
+          "🟢 TorBox Cloud Complete",
+          `"${dl.name}" has finished downloading on TorBox and is ready!`
+        );
       }
-      downloadUrl = dlData.data;
-    } else if (type === 'webdl') {
-      downloadUrl = `${TorBoxConstants.API_BASE}/v1/api/webdl/requestdl?token=${apiKey}&web_id=${id}&redirect=true`;
-    } else if (type === 'usenet') {
-      const reqUrl = `${TorBoxConstants.API_BASE}/v1/api/usenet/requestdl?token=${apiKey}&usenet_id=${id}&zip_link=true`;
-      const dlRes = await fetch(reqUrl);
-      const dlData = await dlRes.json();
-      if (!dlRes.ok || dlData.success === false) {
-        throw new Error(dlData.detail || dlData.error || 'Failed to generate download link');
-      }
-      downloadUrl = dlData.data;
-    } else {
-      throw new Error(`Unknown type: ${type}`);
     }
 
-    const settings = await chrome.storage.local.get(['downloadEngine']);
-    const engine = settings.downloadEngine || 'idm';
-
-    if (engine === 'browser') {
-      await startNativeDownload(downloadUrl);
-    }
-
-    return { success: true, downloadUrl, engine };
-  } catch (error) {
-    return { success: false, error: error.message };
+    knownActiveJobIds = currentActiveIds;
+  } catch (e) {
+    console.warn("Background download status check failed:", e);
   }
 }
+
+// Setup background alarm
+chrome.alarms.create(ALARM_CHECK_DOWNLOADS, { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_CHECK_DOWNLOADS) {
+    checkBackgroundDownloadStatus();
+  }
+});
 
 /**
  * Message Handler Router
@@ -734,6 +1079,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (action === TorBoxConstants.MESSAGES.GET_USER_STATS) {
+    getUserStats().then(sendResponse);
+    return true;
+  }
+
   if (action === TorBoxConstants.MESSAGES.GET_HOSTERS) {
     getHosters().then(sendResponse).catch(() => sendResponse({
       hosters: TorBoxConstants.DEFAULT_HOSTERS,
@@ -743,12 +1093,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (action === TorBoxConstants.MESSAGES.CHECK_CACHE) {
-    checkCache(message.urls).then(results => sendResponse({ results })).catch(() => sendResponse({ results: {} }));
+    checkCache(message.urls, message.listFiles).then(results => sendResponse({ results })).catch(() => sendResponse({ results: {} }));
     return true;
   }
 
   if (action === TorBoxConstants.MESSAGES.DOWNLOAD_CACHED) {
-    downloadCached(message.url).then(sendResponse);
+    downloadCached(message.url, message.fileId).then(sendResponse);
     return true;
   }
 
@@ -759,6 +1109,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (action === TorBoxConstants.MESSAGES.CREATE_WEBDL || action === TorBoxConstants.MESSAGES.CREATE_TORRENT || action === TorBoxConstants.MESSAGES.CREATE_USENET) {
     createCloudDownload(message.url).then(sendResponse);
+    return true;
+  }
+
+
+
+  if (action === TorBoxConstants.MESSAGES.MAGNET_TO_FILE) {
+    magnetToFile(message.magnet).then(sendResponse);
+    return true;
+  }
+
+  if (action === TorBoxConstants.MESSAGES.GET_TORRENT_INFO) {
+    getTorrentInfo(message.hashOrMagnet).then(sendResponse);
+    return true;
+  }
+
+  if (action === TorBoxConstants.MESSAGES.START_DEVICE_AUTH) {
+    startDeviceAuth().then(sendResponse);
+    return true;
+  }
+
+  if (action === TorBoxConstants.MESSAGES.CHECK_DEVICE_AUTH_TOKEN) {
+    checkDeviceAuthToken(message.deviceCode).then(sendResponse);
+    return true;
+  }
+
+  if (action === TorBoxConstants.MESSAGES.SEND_TO_CLOUD) {
+    sendToCloud(message.id, message.fileId, message.type, message.provider, message.token).then(sendResponse);
+    return true;
+  }
+
+  if (action === TorBoxConstants.MESSAGES.GET_CLOUD_INTEGRATIONS) {
+    getCloudIntegrations().then(sendResponse);
     return true;
   }
 
@@ -773,7 +1155,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (action === TorBoxConstants.MESSAGES.REQUEST_DOWNLOAD_BY_ID) {
-    requestDownloadById(message.id, message.type).then(sendResponse);
+    requestDownloadById(message.id, message.type, message.fileId).then(sendResponse);
     return true;
   }
 
@@ -782,6 +1164,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+
+
 });
 
 /**
@@ -791,7 +1175,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "torbox-context-root",
     title: "TorBox",
-    contexts: ["link", "selection"]
+    contexts: ["link", "selection", "page"]
   });
 
   chrome.contextMenus.create({
@@ -801,10 +1185,19 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ["link", "selection"]
   });
 
+
+
+  chrome.contextMenus.create({
+    id: "torbox-magnet-to-torrent",
+    parentId: "torbox-context-root",
+    title: "💾 Save Magnet as .torrent File",
+    contexts: ["link", "selection"]
+  });
+
   chrome.contextMenus.create({
     id: "torbox-check-cache",
     parentId: "torbox-context-root",
-    title: "🔍 Check TorBox Cache",
+    title: "🔍 Check TorBox Cache Status",
     contexts: ["link", "selection"]
   });
 });
@@ -833,13 +1226,29 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         showNotification("TorBox - Error", res.error || "Failed to add to TorBox", true);
       }
     }
+
+  } else if (info.menuItemId === "torbox-magnet-to-torrent") {
+    if (!targetUrl.startsWith('magnet:?')) {
+      showNotification("TorBox", "Selected item is not a magnet link", true);
+      return;
+    }
+    showNotification("TorBox", "Converting magnet to .torrent file...");
+    const res = await magnetToFile(targetUrl);
+    if (res.success && res.torrentData) {
+      const name = TorBoxUtils.extractMagnetName(targetUrl) || 'download';
+      const blobUrl = `data:application/x-bittorrent;base64,${btoa(unescape(encodeURIComponent(JSON.stringify(res.torrentData))))}`;
+      await startNativeDownload(blobUrl, `${name}.torrent`);
+      showNotification("TorBox", "Torrent file saved!");
+    } else {
+      showNotification("TorBox Error", res.error || "Conversion failed", true);
+    }
   } else if (info.menuItemId === "torbox-check-cache") {
     const cacheResult = await checkCache([targetUrl]);
     const state = cacheResult[targetUrl];
     if (state === TorBoxConstants.STATES.CACHED) {
       showNotification("TorBox Cache Status", "🟢 CACHED! Instant download available.");
     } else if (state === TorBoxConstants.STATES.NOT_CACHED) {
-      showNotification("TorBox Cache Status", "⚪ Not cached. Can be added to TorBox queue.");
+      showNotification("TorBox Cache Status", "⚪ Not cached. Can be queued to TorBox.");
     } else {
       showNotification("TorBox Cache Status", "⚠️ Status: " + (state || "Unknown"));
     }

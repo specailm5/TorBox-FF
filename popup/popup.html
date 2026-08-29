@@ -16,7 +16,7 @@
         </div>
         <div class="brand-text">
           <h1>TorBox</h1>
-          <span class="version-tag">v2.0</span>
+          <span class="version-tag">v2.1</span>
         </div>
       </div>
 
@@ -33,6 +33,14 @@
         </button>
       </div>
     </header>
+
+    <!-- Quick Device Auth Banner (shown when unauthenticated) -->
+    <div id="authBanner" class="auth-banner" style="display:none;">
+      <div class="auth-banner-content">
+        <span>Connect your TorBox account to start downloading</span>
+        <button id="quickLoginBtn" class="btn btn-emerald small">⚡ 1-Click Sign In</button>
+      </div>
+    </div>
 
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
@@ -97,17 +105,7 @@
           </div>
         </div>
 
-        <!-- Batch Action Bar -->
-        <div class="batch-actions-bar" id="batchActionBar" style="display:none;">
-          <button id="batchDownloadCachedBtn" class="btn btn-emerald">
-            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
-            <span>Download All Cached (<span id="batchCachedCount">0</span>)</span>
-          </button>
-          <button id="batchAddCloudBtn" class="btn btn-indigo">
-            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z"/></svg>
-            <span>Add All to TorBox</span>
-          </button>
-        </div>
+
 
         <!-- Filter & Search Controls -->
         <div class="search-filter-row">
@@ -159,6 +157,7 @@
           <div class="filter-chips small">
             <button class="chip active" data-dl-filter="all">All</button>
             <button class="chip" data-dl-filter="active">Active</button>
+            <button class="chip" data-dl-filter="queued">Queued</button>
             <button class="chip" data-dl-filter="completed">Completed</button>
           </div>
           <button id="refreshDownloadsBtn" class="icon-btn small" title="Refresh">
@@ -174,6 +173,27 @@
         </div>
       </section>
     </main>
+
+
+
+    <!-- Device Auth Modal Overlay -->
+    <div id="deviceAuthModal" class="modal-overlay" style="display:none;">
+      <div class="modal-card auth-modal-card">
+        <div class="modal-header">
+          <span class="modal-title">🔑 TorBox 1-Click Login</span>
+          <button id="closeAuthModalBtn" class="icon-btn small">✕</button>
+        </div>
+        <div class="modal-body auth-modal-body">
+          <p class="auth-desc">Enter this code on the authorization page or click the link below:</p>
+          <div class="auth-code-box" id="authCodeDisplay">------</div>
+          <a id="authVerifyLink" href="#" target="_blank" class="btn btn-emerald" style="width:100%; text-decoration:none; margin-top:10px;">
+            🚀 Open TorBox Authorization Page
+          </a>
+          <div class="auth-status" id="authStatusText">⏳ Waiting for approval...</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script src="../shared/constants.js"></script>

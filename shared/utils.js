@@ -235,6 +235,13 @@ const TorBoxUtils = {
   },
 
   /**
+   * Alias for extractMagnetHash.
+   */
+  extractHashFromMagnet(url) {
+    return this.extractMagnetHash(url);
+  },
+
+  /**
    * Helper to decode Base32 BTIH hash to standard 40-char Hex.
    */
   _base32ToHex(base32) {
@@ -306,6 +313,87 @@ const TorBoxUtils = {
       if (count >= 1) return `${count}${interval.label} ago`;
     }
     return 'just now';
+  },
+
+  /**
+   * Checks if a filename, release title, magnet name, or URL represents a video or audio media item.
+   */
+  isVideoOrAudio(filenameOrUrl) {
+    if (!filenameOrUrl || typeof filenameOrUrl !== 'string') return false;
+    return this.isVideo(filenameOrUrl) || this.isAudio(filenameOrUrl);
+  },
+
+  /**
+   * Checks if a string represents a video file or video release (movies, TV shows, anime).
+   */
+  isVideo(filenameOrUrl) {
+    if (!filenameOrUrl || typeof filenameOrUrl !== 'string') return false;
+    const str = filenameOrUrl.trim().toLowerCase();
+
+    // Exclude obvious software executables / documents
+    if (/\.(exe|msi|dmg|pkg|apk|pdf|docx|xlsx|epub|txt)(\b|[?#&._-]|$)/i.test(str)) {
+      return false;
+    }
+
+    // 1. Direct Video File Extensions anywhere in the string
+    const videoExtRegex = /\.(mp4|mkv|avi|webm|mov|m4v|wmv|flv|ts|m2ts|vob|3gp|ogv|divx|xvid)(\b|[?#&._-]|$)/i;
+    if (videoExtRegex.test(str)) return true;
+
+    // 2. Video Quality, Scene, and Codec Release Keywords
+    const videoKeywordsRegex = /\b(1080p|720p|2160p|480p|576p|4k|uhd|bluray|blu-ray|bdrip|brrip|web-?dl|webrip|web-rip|hdtv|hd-?tv|dvdrip|dvd-?rip|x264|x265|h\.?264|h\.?265|hevc|avc|10bit|remux|s\d{1,2}e\d{1,2}|season\s*\d+|episode\s*\d+|complete\s*series|extended\s*cut|directors\s*cut)\b/i;
+    if (videoKeywordsRegex.test(str)) return true;
+
+    // 3. Magnet DN extraction check
+    if (str.startsWith('magnet:')) {
+      const dn = this.extractMagnetName(filenameOrUrl);
+      if (dn && dn !== filenameOrUrl) {
+        if (this.isVideo(dn)) return true;
+      }
+    }
+
+    return false;
+  },
+
+  /**
+   * Checks if a string represents pure audio (music albums, tracks, podcasts, audiobooks).
+   */
+  isAudio(filenameOrUrl) {
+    if (!filenameOrUrl || typeof filenameOrUrl !== 'string') return false;
+    const str = filenameOrUrl.trim().toLowerCase();
+
+    // Exclude obvious software / documents
+    if (/\.(exe|msi|dmg|pkg|apk|pdf|docx|xlsx|epub|txt)(\b|[?#&._-]|$)/i.test(str)) {
+      return false;
+    }
+
+    // If it has video indicators, it's a video release (e.g. video with AAC audio)
+    if (this.isVideo(filenameOrUrl)) return false;
+
+    // 1. Pure Audio Extensions
+    const audioExtRegex = /\.(mp3|flac|wav|m4a|ogg|opus|alac|ape|aiff|wma|aac)(\b|[?#&._-]|$)/i;
+    if (audioExtRegex.test(str)) return true;
+
+    // 2. Music / Album Release Keywords & bracketed tags
+    const audioKeywordsRegex = /(\[flac\]|\[mp3\]|\b320kbps\b|\b256kbps\b|\bflac\s*album\b|\bdiscography\b|\bost\b|\bsoundtrack\b|\baudiobook\b)/i;
+    if (audioKeywordsRegex.test(str)) return true;
+
+    if (str.startsWith('magnet:')) {
+      const dn = this.extractMagnetName(filenameOrUrl);
+      if (dn && dn !== filenameOrUrl) {
+        if (this.isAudio(dn)) return true;
+      }
+    }
+
+    return false;
+  },
+
+  /**
+   * Extracts clean extension from filename.
+   */
+  getFileExtension(filename) {
+    if (!filename || typeof filename !== 'string') return '';
+    const parts = filename.split('?')[0].split('#')[0].split('.');
+    return parts.length > 1 ? parts.pop().toLowerCase() : '';
   },
 
   /**

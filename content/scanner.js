@@ -16,6 +16,7 @@ class TorBoxScanner {
     // Debounced check batcher
     this.processPendingChecks = window.TorBoxUtils.debounce(this._processPendingChecks.bind(this), 400);
     this.debouncedScan = window.TorBoxUtils.debounce(this._scanFullDOM.bind(this), 300);
+    this.debouncedUpdateBadge = window.TorBoxUtils.debounce(this._updateBadge.bind(this), 150);
 
     this._setupMessageListener();
   }
@@ -33,42 +34,72 @@ class TorBoxScanner {
   _getNearestHeading(node) {
     if (!node || !node.parentElement) return 'Page Links';
 
-    // 1. Check article / card container
-    const container = node.closest('article, .post, .entry, .item, .torrent-item, .card, .topic, .box');
+    const cleanTitle = (raw) => {
+      if (!raw) return '';
+      return raw
+        .replace(/^permanent\s+link\s+to\s*:?\s*/i, '')
+        .replace(/^comments?\s+on\s*:?\s*/i, '')
+        .replace(/^download\s*:\s*/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const isValidTitle = (str) => {
+      if (!str || str.length < 3) return false;
+      return /[a-zA-Z0-9]/.test(str);
+    };
+
+    // 1. Check article / card container (e.g. FitGirl, WordPress, DDL posts, forum topics)
+    const container = node.closest('article, .post, .type-post, .entry, .item, .torrent-item, .card, .topic, .forum-post, .box, .release');
     if (container) {
-      const titleEl = container.querySelector('h1, h2, h3, h4, .entry-title, .post-title, .title, .subject');
-      if (titleEl && titleEl.textContent.trim()) {
-        return titleEl.textContent.trim().substring(0, 80);
+      const titleEl = container.querySelector('.entry-title a, .entry-title, .post-title a, .post-title, a[rel="bookmark"], h1 a, h1, h2 a, h2, h3 a, h3, .title, .subject');
+      if (titleEl && titleEl.textContent) {
+        const cleaned = cleanTitle(titleEl.textContent);
+        if (isValidTitle(cleaned)) {
+          return cleaned.substring(0, 100);
+        }
       }
     }
 
-    // 2. Preceding headings
+    // 2. Scan preceding headings, ignoring generic mirror/download/widget headers
     const headings = document.querySelectorAll('h1, h2, h3, h4, h5');
     let closestHeading = null;
-    const ignoreWords = ['download', 'mirror', 'link', 'description', 'screenshot', 'comment', 'share', 'nav'];
+    const ignoreWords = [
+      'download', 'downloads', 'download mirrors', 'mirrors', 'mirror', 'filehoster',
+      'filehosters', 'direct links', 'direct mirror', 'links', 'torrents', 'torrent',
+      'magnet', 'magnets', 'description', 'screenshot', 'screenshots', 'comment',
+      'comments', 'share', 'nav', 'navigation', 'system requirements', 'repack features',
+      'features', 'discussion', 'nfo', 'info', 'trailer', 'video', 'changelog',
+      'selective download', 'installation', 'how to install', 'included dlc',
+      'search', 'recent posts', 'archives', 'categories', 'meta', 'tags', 'pages',
+      'leave a reply', 'related posts', 'upcoming repacks'
+    ];
 
     for (const h of headings) {
       if (h.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) {
-        const text = h.textContent.trim().toLowerCase();
-        const isIgnored = ignoreWords.some(w => text === w || text.startsWith(w + ':'));
-        if (text && !isIgnored && text.length > 2) {
-          closestHeading = h;
+        const rawText = h.textContent ? h.textContent.trim().toLowerCase() : '';
+        const isIgnored = ignoreWords.some(w => rawText === w || rawText.startsWith(w + ':') || rawText.startsWith(w + ' -'));
+        const cleaned = cleanTitle(h.textContent);
+        if (!isIgnored && isValidTitle(cleaned)) {
+          closestHeading = cleaned;
         }
       } else {
         break;
       }
     }
 
-    if (closestHeading && closestHeading.textContent.trim()) {
-      return closestHeading.textContent.trim().substring(0, 80);
+    if (closestHeading && isValidTitle(closestHeading)) {
+      return closestHeading.substring(0, 100);
     }
 
-    // 3. Fallback: Page title
+    // 3. Fallback: Clean Document title
     let titleStr = document.title || '';
     if (titleStr.includes(' - ')) titleStr = titleStr.split(' - ')[0];
     else if (titleStr.includes(' | ')) titleStr = titleStr.split(' | ')[0];
+    else if (titleStr.includes(' » ')) titleStr = titleStr.split(' » ')[0];
 
-    return titleStr.trim() || 'Page Links';
+    const finalTitle = cleanTitle(titleStr);
+    return isValidTitle(finalTitle) ? finalTitle : 'Page Links';
   }
 
   async init() {
@@ -76,19 +107,13 @@ class TorBoxScanner {
     const stored = await chrome.storage.local.get([
       'autoScan',
       'scanTextLinks',
-      'showUncached',
-      'showErrors',
-      'displayMode',
-      'showStreamIndicator',
+      'showFloatingDock',
       'customExcludedDomains'
     ]);
 
     if (stored.autoScan !== undefined) this.settings.autoScan = stored.autoScan;
     if (stored.scanTextLinks !== undefined) this.settings.scanTextLinks = stored.scanTextLinks;
-    if (stored.showUncached !== undefined) this.settings.showUncached = stored.showUncached;
-    if (stored.showErrors !== undefined) this.settings.showErrors = stored.showErrors;
-    if (stored.displayMode !== undefined) this.settings.displayMode = stored.displayMode;
-    if (stored.showStreamIndicator !== undefined) this.settings.showStreamIndicator = stored.showStreamIndicator;
+    if (stored.showFloatingDock !== undefined) this.settings.showFloatingDock = stored.showFloatingDock;
 
     // Check custom domain exclusion
     const currentHost = window.location.hostname.toLowerCase();
@@ -137,7 +162,7 @@ class TorBoxScanner {
         if (m.type === 'childList' && m.addedNodes.length > 0) {
           for (const node of m.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
-              if (node.classList && (node.classList.contains('torbox-indicator-host') || node.id === 'torbox-stream-indicator')) {
+              if (node.id === 'torbox-floating-dock') {
                 continue;
               }
               hasNewNodes = true;
@@ -238,17 +263,12 @@ class TorBoxScanner {
       });
     }
 
-    if (this.settings.displayMode === 'buttons') {
-      window.torBoxUI.createIndicator(domElement, normalizedUrl);
-    }
-
     this.pendingChecks.push({ element: domElement, url: normalizedUrl });
     this.processPendingChecks();
+    this.debouncedUpdateBadge();
   }
 
   checkCurrentPage() {
-    if (!this.settings.showStreamIndicator) return;
-
     const currentUrl = window.location.href;
     let hostname;
     try {
@@ -266,23 +286,26 @@ class TorBoxScanner {
     if (isStreamSite || this.isHosterSite) {
       const urlObj = new URL(currentUrl);
       if (urlObj.pathname === '/' && urlObj.search === '' && !urlObj.hash) {
-        if (window.torBoxUI) window.torBoxUI.removeStreamIndicator();
         return;
       }
 
-      chrome.runtime.sendMessage({
-        action: window.TorBoxConstants.MESSAGES.CHECK_CACHE,
-        urls: [currentUrl]
-      }, (response) => {
-        if (response && response.results) {
-          const state = response.results[currentUrl] || window.TorBoxConstants.STATES.NOT_CACHED;
-          if (window.torBoxUI) {
-            window.torBoxUI.createStreamIndicator(currentUrl, state);
-          }
-        }
-      });
-    } else {
-      if (window.torBoxUI) window.torBoxUI.removeStreamIndicator();
+      let linkTitle = document.title ? document.title.split(' - ')[0].split(' | ')[0].split(' » ')[0].trim() : hostname;
+      if (!linkTitle || linkTitle.length < 2) linkTitle = hostname;
+
+      if (!this.pageLinks.has(currentUrl)) {
+        this.pageLinks.set(currentUrl, {
+          url: currentUrl,
+          originalUrl: currentUrl,
+          text: linkTitle,
+          group: isStreamSite ? 'Stream Video' : 'File Download',
+          state: window.TorBoxConstants.STATES.CHECKING,
+          type: 'webdl'
+        });
+
+        this.pendingChecks.push({ element: document.body, url: currentUrl });
+        this.processPendingChecks();
+        this.debouncedUpdateBadge();
+      }
     }
   }
 
@@ -305,18 +328,6 @@ class TorBoxScanner {
         if (this.pageLinks.has(item.url)) {
           this.pageLinks.get(item.url).state = state;
         }
-
-        if (this.settings.displayMode === 'buttons') {
-          if (state === window.TorBoxConstants.STATES.NOT_CACHED && !this.settings.showUncached) {
-            window.torBoxUI.removeIndicator(item.element);
-            continue;
-          }
-          if (state === window.TorBoxConstants.STATES.ERROR && !this.settings.showErrors) {
-            window.torBoxUI.removeIndicator(item.element);
-            continue;
-          }
-          window.torBoxUI.updateIndicator(item.element, state);
-        }
       }
 
       this._updateBadge();
@@ -335,6 +346,10 @@ class TorBoxScanner {
       action: window.TorBoxConstants.MESSAGES.UPDATE_BADGE,
       count: cachedCount
     });
+
+    if (window.torBoxUI) {
+      window.torBoxUI.updateFloatingDock(this.pageLinks, this.settings.showFloatingDock !== false);
+    }
   }
 }
 

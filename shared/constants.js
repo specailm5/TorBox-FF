@@ -22,6 +22,7 @@ const TorBoxConstants = {
     SET_API_KEY: "SET_API_KEY",
     TEST_AUTH: "TEST_AUTH",
     GET_USER_INFO: "GET_USER_INFO",
+    GET_USER_STATS: "GET_USER_STATS",
     GET_SETTINGS: "GET_SETTINGS",
     SET_SETTINGS: "SET_SETTINGS",
     CREATE_WEBDL: "CREATE_WEBDL",
@@ -32,7 +33,22 @@ const TorBoxConstants = {
     CONTROL_DOWNLOAD: "CONTROL_DOWNLOAD",
     UPDATE_BADGE: "UPDATE_BADGE",
     GET_PAGE_LINKS: "GET_PAGE_LINKS",
-    SHOW_NOTIFICATION: "SHOW_NOTIFICATION"
+    SHOW_NOTIFICATION: "SHOW_NOTIFICATION",
+    MAGNET_TO_FILE: "MAGNET_TO_FILE",
+    GET_TORRENT_INFO: "GET_TORRENT_INFO",
+    START_DEVICE_AUTH: "START_DEVICE_AUTH",
+    CHECK_DEVICE_AUTH_TOKEN: "CHECK_DEVICE_AUTH_TOKEN",
+    SEND_TO_CLOUD: "SEND_TO_CLOUD",
+    GET_CLOUD_INTEGRATIONS: "GET_CLOUD_INTEGRATIONS"
+  },
+
+  CLOUD_PROVIDERS: {
+    googledrive: { name: "Google Drive", icon: "📁" },
+    onedrive: { name: "OneDrive", icon: "☁️" },
+    dropbox: { name: "Dropbox", icon: "📦" },
+    gofile: { name: "Gofile", icon: "🚀" },
+    "1fichier": { name: "1Fichier", icon: "🗄️" },
+    pixeldrain: { name: "Pixeldrain", icon: "💾" }
   },
 
   PLAN_TIERS: {
@@ -45,14 +61,12 @@ const TorBoxConstants = {
   DEFAULT_SETTINGS: {
     autoScan: true,
     scanTextLinks: true,
-    showUncached: true,
-    showErrors: false,
-    displayMode: "buttons", // "buttons", "dock", "list", "off"
-    showStreamIndicator: true,
+    showFloatingDock: true,
     skipSaveDialog: true, // Skip the save dialog window when downloading
     downloadEngine: "idm", // "idm" (trigger via page for IDM/FDM interception) or "browser" (chrome.downloads API)
     autoDownloadCached: false,
     notificationsEnabled: true,
+    backgroundCompletionAlerts: true,
     customExcludedDomains: []
   },
 

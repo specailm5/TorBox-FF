@@ -1,11 +1,18 @@
 /**
  * TorBox Options Page Controller
+ * Handles account credentials, 1-click device auth, preferences, cloud integrations, and hosters directory.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
   // Sidebar Navigation
   const navItems = document.querySelectorAll('.nav-item');
   const settingsSections = document.querySelectorAll('.settings-section');
+
+  // Device Auth Elements
+  const optDeviceAuthBtn = document.getElementById('optDeviceAuthBtn');
+  const optAuthCodeContainer = document.getElementById('optAuthCodeContainer');
+  const optAuthCodeDisplay = document.getElementById('optAuthCodeDisplay');
+  const optAuthStatusText = document.getElementById('optAuthStatusText');
 
   // Account Elements
   const apiKeyInput = document.getElementById('apiKey');
@@ -26,13 +33,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Preferences Elements
   const autoScanToggle = document.getElementById('autoScanToggle');
   const scanTextLinksToggle = document.getElementById('scanTextLinksToggle');
-  const showUncachedToggle = document.getElementById('showUncachedToggle');
-  const showErrorsToggle = document.getElementById('showErrorsToggle');
-  const showStreamToggle = document.getElementById('showStreamToggle');
+  const showFloatingDockToggle = document.getElementById('showFloatingDockToggle');
   const notificationsToggle = document.getElementById('notificationsToggle');
+  const backgroundCompletionAlertsToggle = document.getElementById('backgroundCompletionAlertsToggle');
   const skipSaveDialogToggle = document.getElementById('skipSaveDialogToggle');
   const downloadEngineSelect = document.getElementById('downloadEngineSelect');
-  const displayModeSelect = document.getElementById('displayModeSelect');
   const savePreferencesBtn = document.getElementById('savePreferencesBtn');
   const prefsStatusMsg = document.getElementById('prefsStatusMsg');
 
@@ -47,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const rulesStatusMsg = document.getElementById('rulesStatusMsg');
 
   let hostersCache = [];
+  let deviceAuthPollTimer = null;
 
   // 1. Navigation Controller
   navItems.forEach(item => {
@@ -66,13 +72,12 @@ document.addEventListener('DOMContentLoaded', () => {
       'torboxApiKey',
       'autoScan',
       'scanTextLinks',
-      'showUncached',
-      'showErrors',
+      'showFloatingDock',
       'showStreamIndicator',
       'notificationsEnabled',
+      'backgroundCompletionAlerts',
       'skipSaveDialog',
       'downloadEngine',
-      'displayMode',
       'customExcludedDomains'
     ], (stored) => {
       if (stored.torboxApiKey) {
@@ -82,13 +87,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       autoScanToggle.checked = stored.autoScan !== false;
       scanTextLinksToggle.checked = stored.scanTextLinks !== false;
-      showUncachedToggle.checked = stored.showUncached !== false;
-      showErrorsToggle.checked = stored.showErrors === true;
-      showStreamToggle.checked = stored.showStreamIndicator !== false;
+      showFloatingDockToggle.checked = stored.showFloatingDock !== false;
       notificationsToggle.checked = stored.notificationsEnabled !== false;
+      backgroundCompletionAlertsToggle.checked = stored.backgroundCompletionAlerts !== false;
       skipSaveDialogToggle.checked = stored.skipSaveDialog !== false;
       downloadEngineSelect.value = stored.downloadEngine || 'idm';
-      displayModeSelect.value = stored.displayMode || 'buttons';
 
       if (Array.isArray(stored.customExcludedDomains)) {
         excludedDomainsTextarea.value = stored.customExcludedDomains.join('\n');
@@ -96,12 +99,54 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 3. API Key Password Visibility Toggle
+  // 3. 1-Click Device Code Login
+  optDeviceAuthBtn.addEventListener('click', () => {
+    optDeviceAuthBtn.disabled = true;
+    optDeviceAuthBtn.textContent = 'Connecting...';
+
+    chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.START_DEVICE_AUTH }, (res) => {
+      optDeviceAuthBtn.disabled = false;
+      optDeviceAuthBtn.textContent = 'Sign In with TorBox';
+
+      if (res && res.success && res.authData) {
+        const data = res.authData;
+        optAuthCodeDisplay.textContent = data.user_code || data.device_code || '------';
+        optAuthStatusText.textContent = '⏳ Waiting for browser confirmation...';
+        optAuthCodeContainer.style.display = 'block';
+
+        window.open(data.verification_url || 'https://torbox.app/auth/device', '_blank');
+
+        if (deviceAuthPollTimer) clearInterval(deviceAuthPollTimer);
+        const intervalMs = (data.interval || 5) * 1000;
+
+        deviceAuthPollTimer = setInterval(() => {
+          chrome.runtime.sendMessage({
+            action: TorBoxConstants.MESSAGES.CHECK_DEVICE_AUTH_TOKEN,
+            deviceCode: data.device_code
+          }, (tokenRes) => {
+            if (tokenRes && tokenRes.success && tokenRes.token) {
+              clearInterval(deviceAuthPollTimer);
+              optAuthStatusText.textContent = '🟢 Connected successfully!';
+              apiKeyInput.value = tokenRes.token;
+              testConnection(tokenRes.token, true);
+              setTimeout(() => {
+                optAuthCodeContainer.style.display = 'none';
+              }, 3000);
+            }
+          });
+        }, intervalMs);
+      } else {
+        alert("Failed to initiate device authentication.");
+      }
+    });
+  });
+
+  // 4. API Key Password Visibility Toggle
   toggleVisibleBtn.addEventListener('click', () => {
     apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
   });
 
-  // 4. Save API Key
+  // 5. Save API Key
   saveKeyBtn.addEventListener('click', () => {
     const key = apiKeyInput.value.trim();
     if (!key) {
@@ -115,7 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 5. Test Connection
+  // 6. Test Connection
   testKeyBtn.addEventListener('click', () => {
     const key = apiKeyInput.value.trim();
     if (!key) {
@@ -178,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 6. Remove Key
+  // 7. Remove Key
   removeKeyBtn.addEventListener('click', () => {
     chrome.storage.local.remove(['torboxApiKey'], () => {
       apiKeyInput.value = '';
@@ -187,24 +232,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 7. Save Scanning Preferences
+  // 8. Save Scanning Preferences
   savePreferencesBtn.addEventListener('click', () => {
     chrome.storage.local.set({
       autoScan: autoScanToggle.checked,
       scanTextLinks: scanTextLinksToggle.checked,
-      showUncached: showUncachedToggle.checked,
-      showErrors: showErrorsToggle.checked,
-      showStreamIndicator: showStreamToggle.checked,
+      showFloatingDock: showFloatingDockToggle.checked,
       notificationsEnabled: notificationsToggle.checked,
+      backgroundCompletionAlerts: backgroundCompletionAlertsToggle.checked,
       skipSaveDialog: skipSaveDialogToggle.checked,
-      downloadEngine: downloadEngineSelect.value,
-      displayMode: displayModeSelect.value
+      downloadEngine: downloadEngineSelect.value
     }, () => {
       showStatus(prefsStatusMsg, 'Scanning preferences saved successfully', true);
     });
   });
 
-  // 8. Save Domain Rules
+  // 9. Save Domain Rules
   saveRulesBtn.addEventListener('click', () => {
     const lines = excludedDomainsTextarea.value
       .split('\n')
@@ -216,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 9. Supported Hosters Directory
+  // 10. Supported Hosters Directory
   function loadHosters() {
     chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.GET_HOSTERS }, (res) => {
       const hosters = (res && res.hosters) ? res.hosters : TorBoxConstants.DEFAULT_HOSTERS;

@@ -6,9 +6,11 @@
   "permissions": [
     "storage",
     "downloads",
+    "downloads.open",
     "scripting",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "https://api.torbox.app/*",
@@ -60,5 +62,15 @@
   "options_ui": {
     "page": "options/options.html",
     "open_in_tab": true
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*",
+        "torbox_logo.svg",
+        "torbox_favicon.ico"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
