@@ -1,22 +1,57 @@
-# TorBox-FF
+# TorBox Debrid & Cache Manager
 
-A browser extension that detects downloadable links on webpages and allows you to instantly download them if they are cached on TorBox.
+A modern, high-performance browser extension (compatible with **Firefox, Chrome, Brave, Edge, and Opera**) that integrates with [TorBox.app](https://torbox.app). It detects torrents, magnet links, Usenet NZBs, and 300+ file hosters on web pages, checks TorBox cache status in real-time, and enables instant direct downloads with 1 click.
 
-## Installation (Development Mode)
+---
 
-1. Open your Chromium-based browser (Chrome, Brave, Edge).
-2. Navigate to `chrome://extensions`.
-3. Enable **Developer Mode** using the toggle in the top right corner.
-4. Click **Load unpacked** in the top left corner.
-5. Select this project folder (`TorBox-FF` / `TorBox-Ext`).
-6. The extension icon should appear in your browser toolbar.
+## ✨ Key Features
 
-## Configuration
+- **⚡ Instant Real-Time Cache Checking**:
+  - Automatically scans web pages and checks cache status via TorBox API v1 with intelligent batching.
+  - Supports **Magnet links**, **.torrent URLs**, **Usenet (.nzb)**, and **300+ File Hosters** (Rapidgator, 1fichier, Mega, Pixeldrain, DDownload, Mediafire, etc.).
+  - **Deep Plaintext Scanning**: Detects raw magnet URIs and unlinked hoster URLs inside forum posts, `<pre>`, `<code>`, and text containers.
 
-Before using the extension, you must set your TorBox API key:
+- **🚀 1-Click Direct Downloads**:
+  - Cached files are downloaded directly via TorBox high-speed CDN through your native browser download manager (compatible with IDM, JDownloader, FDM).
+  - Uncached links can be queued to your TorBox cloud with 1 click (`☁️ To TB`).
 
-1. Click on the TorBox-FF extension icon in your toolbar.
-2. Click the **⚙️ Settings** button.
-3. Paste your **TorBox API Key** in the input field and click **Save Key**.
+- **✨ Dark Glassmorphic Dashboard & Popup**:
+  - **Scanner Tab**: Real-time link counts, live search filter, category chips, and **"⚡ Download All Cached"** / **"☁️ Add All to TorBox"** batch actions.
+  - **Quick Debrid Tab**: Paste any Magnet link or Filehoster URL directly into the popup to instantly check cache and download.
+  - **Cloud Activity Tab**: Live TorBox queue manager displaying active/completed downloads, real-time progress bars, speeds, and CDN download triggers.
+  - **Account & Quota Pill**: Live view of your account plan tier (Pro / Essential / Free) and daily bandwidth quota usage.
 
-*(Note: API keys are saved locally and are never exposed to webpage scripts.)*
+- **🛸 Floating Video & Hoster Streamer Widget**:
+  - Appears on supported streaming sites and file hoster landing pages for quick downloads.
+
+- **⚙️ Full-Featured Options Dashboard**:
+  - Account API verification with plan tier and expiration details.
+  - Granular scanning preferences (display mode, plaintext scanner, notifications).
+  - **Searchable Hosters Explorer**: Interactive directory of all 300+ supported hosters and stream providers.
+  - Custom domain whitelist & blacklist rules.
+
+---
+
+## 📦 Installation Guide
+
+### Chromium-Based Browsers (Chrome, Brave, Edge, Opera, Vivaldi)
+1. Open your browser and navigate to `chrome://extensions` (or `edge://extensions` / `brave://extensions`).
+2. Turn on **Developer Mode** (toggle in the top-right corner).
+3. Click **Load unpacked** (top-left).
+4. Select this project folder (`TorBox-FF`).
+
+### Mozilla Firefox
+1. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on...**.
+3. Select `manifest.json` inside this project folder (`TorBox-FF`).
+
+---
+
+## 🔑 Initial Configuration
+
+1. Click on the **TorBox** extension icon in your browser toolbar.
+2. Click the **⚙️ Settings** icon in the header (or right-click extension icon > *Options*).
+3. Paste your **TorBox API Key** (obtained from [torbox.app/settings](https://torbox.app/settings)).
+4. Click **Save Key**. Your connected account profile (Plan tier, Bandwidth limit, Expiration) will immediately load and display.
+
+*(Note: API keys are stored locally within extension storage and are never exposed to webpage scripts.)*

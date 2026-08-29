@@ -1,5 +1,9 @@
-/* Optional global styles if needed, empty for now as we use Shadow DOM */
+/* TorBox Content Script Isolated Host Styles */
 .torbox-indicator-host {
-  all: initial; /* Reset styles to prevent host bleeding */
-  display: inline-block;
+  all: initial !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  margin: 0 4px !important;
+  line-height: normal !important;
+  white-space: nowrap !important;
 }

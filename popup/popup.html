@@ -1,56 +1,183 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TorBox Manager</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="header">
-    <div class="logo-area">
-      <img src="https://torbox.app/favicon.ico" alt="TorBox" width="24" height="24" onerror="this.style.display='none'">
-      <h2>TorBox-FF</h2>
-    </div>
-    <a href="#" id="openSettings" class="settings-btn" title="Settings">
-      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-    </a>
-  </div>
-
-  <div class="tabs">
-    <div class="tab active" data-tab="stats">Scanner</div>
-    <div class="tab" data-tab="downloads">Downloads</div>
-  </div>
-
-  <div class="tab-content active" id="tab-stats">
-    <div class="stats-box">
-      <div class="stat-row">
-        <span><svg class="icon green" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg> Cached</span>
-        <strong id="countCached">0</strong>
+  <div class="popup-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div class="logo-box">
+          <img src="../icons/icon48.png" alt="TorBox" width="22" height="22">
+        </div>
+        <div class="brand-text">
+          <h1>TorBox</h1>
+          <span class="version-tag">v2.0</span>
+        </div>
       </div>
-      <div class="stat-row">
-        <span><svg class="icon gray" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg> Not cached</span>
-        <strong id="countNotCached">0</strong>
-      </div>
-      <div class="stat-row">
-        <span><svg class="icon blue" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg> Pending</span>
-        <strong id="countPending">0</strong>
-      </div>
-    </div>
-    
-    <button id="scanBtn" class="btn primary">Scan Current Page</button>
-    
-    <div id="pageLinksContainer" style="display: none; margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
-      <h3 style="margin-bottom: 4px; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Found Links</h3>
-      <div id="pageLinksList" class="downloads-list" style="max-height: 400px; overflow-y: auto;"></div>
-    </div>
-  </div>
 
-  <div class="tab-content" id="tab-downloads">
-    <div id="downloadsList" class="downloads-list">
-      <div class="loading-text">Loading downloads...</div>
-    </div>
+      <div class="header-actions">
+        <div id="accountPill" class="account-pill" title="Click to view account">
+          <span class="user-tier-badge" id="userTierBadge">Loading...</span>
+          <span class="user-quota" id="userQuota">--</span>
+        </div>
+        <button id="openSettingsBtn" class="icon-btn" title="Extension Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="scanner">
+        <svg viewBox="0 0 20 20" fill="currentColor">
+          <path d="M9 9a2 2 0 114 0 2 2 0 01-4 0z"/>
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a4 4 0 00-3.446 6.032l-2.261 2.26a1 1 0 101.414 1.415l2.261-2.261A4 4 0 1011 5z" clip-rule="evenodd"/>
+        </svg>
+        <span>Scanner</span>
+      </button>
+
+      <button class="tab-btn" data-tab="quick-debrid">
+        <svg viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/>
+        </svg>
+        <span>Quick Debrid</span>
+      </button>
+
+      <button class="tab-btn" data-tab="downloads">
+        <svg viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+        <span>Cloud Activity</span>
+        <span id="activeDlCountBadge" class="nav-badge" style="display:none;">0</span>
+      </button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="content-body">
+      <!-- TAB 1: SCANNER -->
+      <section id="tab-scanner" class="tab-panel active">
+        <!-- Stats Summary Header -->
+        <div class="stats-overview-grid">
+          <div class="stat-card cached" id="filterCardCached">
+            <div class="stat-icon">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-num" id="countCached">0</span>
+              <span class="stat-label">Cached</span>
+            </div>
+          </div>
+
+          <div class="stat-card not-cached" id="filterCardNotCached">
+            <div class="stat-icon">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-num" id="countNotCached">0</span>
+              <span class="stat-label">Not Cached</span>
+            </div>
+          </div>
+
+          <div class="stat-card pending">
+            <div class="stat-icon">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-num" id="countTotal">0</span>
+              <span class="stat-label">Total Found</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch Action Bar -->
+        <div class="batch-actions-bar" id="batchActionBar" style="display:none;">
+          <button id="batchDownloadCachedBtn" class="btn btn-emerald">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+            <span>Download All Cached (<span id="batchCachedCount">0</span>)</span>
+          </button>
+          <button id="batchAddCloudBtn" class="btn btn-indigo">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z"/></svg>
+            <span>Add All to TorBox</span>
+          </button>
+        </div>
+
+        <!-- Filter & Search Controls -->
+        <div class="search-filter-row">
+          <div class="search-input-box">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+            <input type="text" id="linkSearchInput" placeholder="Filter found links...">
+          </div>
+          <button id="rescanPageBtn" class="icon-btn small" title="Re-scan Page">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+          </button>
+        </div>
+
+        <!-- Filter Chips -->
+        <div class="filter-chips">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="cached">🟢 Cached</button>
+          <button class="chip" data-filter="torrents">🧲 Torrents</button>
+          <button class="chip" data-filter="hosters">📁 Hosters</button>
+        </div>
+
+        <!-- Links List -->
+        <div id="pageLinksList" class="links-scroll-list">
+          <div class="empty-state">
+            <p>Scanning current page for links...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: QUICK DEBRID -->
+      <section id="tab-quick-debrid" class="tab-panel">
+        <div class="debrid-box">
+          <label for="debridInput" class="input-label">Paste Magnet URI, Torrent URL, or Filehoster Link:</label>
+          <textarea id="debridInput" class="debrid-textarea" rows="3" placeholder="magnet:?xt=urn:btih:... or https://rapidgator.net/..."></textarea>
+          
+          <div class="debrid-actions">
+            <button id="debridCheckBtn" class="btn btn-primary">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+              <span>Instant Debrid & Download</span>
+            </button>
+          </div>
+
+          <div id="debridResultBox" class="debrid-result-card" style="display:none;"></div>
+        </div>
+      </section>
+
+      <!-- TAB 3: CLOUD DOWNLOADS -->
+      <section id="tab-downloads" class="tab-panel">
+        <div class="downloads-toolbar">
+          <div class="filter-chips small">
+            <button class="chip active" data-dl-filter="all">All</button>
+            <button class="chip" data-dl-filter="active">Active</button>
+            <button class="chip" data-dl-filter="completed">Completed</button>
+          </div>
+          <button id="refreshDownloadsBtn" class="icon-btn small" title="Refresh">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+          </button>
+        </div>
+
+        <div id="downloadsList" class="downloads-scroll-list">
+          <div class="loading-spinner-box">
+            <div class="spinner"></div>
+            <span>Fetching TorBox downloads...</span>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script src="../shared/constants.js"></script>
+  <script src="../shared/utils.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
