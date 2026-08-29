@@ -21,14 +21,13 @@ A modern, high-performance browser extension (compatible with **Firefox, Chrome,
   - **Cloud Activity Tab**: Live TorBox queue manager displaying active/completed downloads, real-time progress bars, speeds, and CDN download triggers.
   - **Account & Quota Pill**: Live view of your account plan tier (Pro / Essential / Free) and daily bandwidth quota usage.
 
-- **🛸 Floating Video & Hoster Streamer Widget**:
-  - Appears on supported streaming sites and file hoster landing pages for quick downloads.
+- **🛸 Floating Quick-Action Dock**:
+  - Non-intrusive bottom-right floating badge displaying detected links and real-time cache counts, with a slide-up drawer for instant 1-click downloads.
 
 - **⚙️ Full-Featured Options Dashboard**:
   - Account API verification with plan tier and expiration details.
-  - Granular scanning preferences (display mode, plaintext scanner, notifications).
+  - Granular scanning preferences (domain whitelist & blacklist rules, notifications, download manager routing).
   - **Searchable Hosters Explorer**: Interactive directory of all 300+ supported hosters and stream providers.
-  - Custom domain whitelist & blacklist rules.
 
 ---
 
@@ -55,3 +54,5 @@ A modern, high-performance browser extension (compatible with **Firefox, Chrome,
 4. Click **Save Key**. Your connected account profile (Plan tier, Bandwidth limit, Expiration) will immediately load and display.
 
 *(Note: API keys are stored locally within extension storage and are never exposed to webpage scripts.)*
+
+

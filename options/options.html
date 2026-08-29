@@ -14,7 +14,7 @@
         <img src="../icons/icon48.png" alt="TorBox" width="28" height="28">
         <div class="brand-title">
           <h1>TorBox</h1>
-          <span>Manager v2.0</span>
+          <span>Manager v2.1</span>
         </div>
       </div>
 
@@ -27,6 +27,11 @@
         <button class="nav-item" data-section="scanning">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
           <span>Scanning Preferences</span>
+        </button>
+
+        <button class="nav-item" data-section="cloud">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z"/></svg>
+          <span>Cloud Integrations</span>
         </button>
 
         <button class="nav-item" data-section="hosters">
@@ -54,19 +59,35 @@
       <section id="section-account" class="settings-section active">
         <div class="section-header">
           <h2>Account & API Credentials</h2>
-          <p>Configure your TorBox API key to enable instant cache checks and background downloads.</p>
+          <p>Sign in with 1-click device authorization or configure your TorBox API key manually.</p>
+        </div>
+
+        <!-- 1-Click Device Sign In Card -->
+        <div class="card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08)); border-color: rgba(16, 185, 129, 0.3);">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <h3 style="font-size:14px; margin-bottom:4px;">⚡ Instant 1-Click Sign In</h3>
+              <p style="font-size:12px; color:var(--text-muted); margin:0;">Authorize with TorBox in a single click without copying API keys.</p>
+            </div>
+            <button id="optDeviceAuthBtn" class="btn btn-emerald">Sign In with TorBox</button>
+          </div>
+          <div id="optAuthCodeContainer" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);">
+            <div style="font-size:12px; color:var(--text-muted);">Enter this confirmation code in the opened TorBox window:</div>
+            <div id="optAuthCodeDisplay" style="font-family:monospace; font-size:20px; font-weight:800; color:var(--emerald); margin:6px 0;">------</div>
+            <div id="optAuthStatusText" style="font-size:11px; color:var(--text-dim);">⏳ Waiting for authorization...</div>
+          </div>
         </div>
 
         <div class="card">
           <div class="form-group">
-            <label for="apiKey">TorBox API Key</label>
+            <label for="apiKey">TorBox API Key (Manual Entry)</label>
             <div class="input-with-actions">
               <input type="password" id="apiKey" placeholder="Enter your TorBox API Key">
               <button id="toggleVisibleBtn" class="btn btn-icon" title="Show/Hide Key">
                 <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
               </button>
             </div>
-            <span class="help-text">You can find your API key under your <a href="https://torbox.app/settings" target="_blank">TorBox Settings</a>.</span>
+            <span class="help-text">You can also copy your API key from <a href="https://torbox.app/settings" target="_blank">TorBox Settings</a>.</span>
           </div>
 
           <div class="actions-row">
@@ -81,7 +102,7 @@
         <!-- Account Overview Card -->
         <div id="accountOverviewCard" class="card" style="display:none;">
           <div class="card-header-row">
-            <h3>Connected Profile</h3>
+            <h3>Connected Profile & Usage</h3>
             <span id="overviewTierBadge" class="tier-pill">PRO</span>
           </div>
 
@@ -133,26 +154,10 @@
 
             <label class="toggle-row">
               <div class="toggle-text">
-                <strong>Show Uncached Badges</strong>
-                <span>Show indicator badges on links that are not yet cached on TorBox.</span>
+                <strong>Floating Quick-Action Dock</strong>
+                <span>Show sleek floating badge on pages when downloadable links are detected.</span>
               </div>
-              <input type="checkbox" id="showUncachedToggle" class="switch">
-            </label>
-
-            <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Show Error Indicators</strong>
-                <span>Display indicator if cache check or network request encounters an error.</span>
-              </div>
-              <input type="checkbox" id="showErrorsToggle" class="switch">
-            </label>
-
-            <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Floating Video Streamer Widget</strong>
-                <span>Show floating 1-click download bar when visiting supported streaming services.</span>
-              </div>
-              <input type="checkbox" id="showStreamToggle" class="switch">
+              <input type="checkbox" id="showFloatingDockToggle" class="switch">
             </label>
 
             <label class="toggle-row">
@@ -161,6 +166,14 @@
                 <span>Show native OS notifications when context menu downloads start or complete.</span>
               </div>
               <input type="checkbox" id="notificationsToggle" class="switch">
+            </label>
+
+            <label class="toggle-row">
+              <div class="toggle-text">
+                <strong>Background Cloud Completion Alerts</strong>
+                <span>Notify me when queued downloads finish in the TorBox cloud.</span>
+              </div>
+              <input type="checkbox" id="backgroundCompletionAlertsToggle" class="switch">
             </label>
 
             <label class="toggle-row">
@@ -181,15 +194,6 @@
             <span class="help-text">Select IDM mode so Internet Download Manager automatically catches and downloads links.</span>
           </div>
 
-          <div class="form-group" style="margin-top: 14px;">
-            <label for="displayModeSelect">Default Display Mode</label>
-            <select id="displayModeSelect" class="select-box">
-              <option value="buttons">In-Page Badges & Action Buttons (Default)</option>
-              <option value="list">Popup List View Only (Clean Webpages)</option>
-              <option value="off">Off (Manual On-Demand Scan Only)</option>
-            </select>
-          </div>
-
           <div class="actions-row" style="margin-top: 20px;">
             <button id="savePreferencesBtn" class="btn btn-primary">Save Preferences</button>
           </div>
@@ -197,11 +201,55 @@
         </div>
       </section>
 
-      <!-- SECTION 3: SUPPORTED HOSTERS -->
+      <!-- SECTION 3: CLOUD INTEGRATIONS -->
+      <section id="section-cloud" class="settings-section">
+        <div class="section-header">
+          <h2>Cloud Storage Integrations</h2>
+          <p>Offload and push TorBox downloads directly to your cloud storage providers.</p>
+        </div>
+
+        <div class="card">
+          <div class="cloud-grid" id="cloudIntegrationsGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px;">
+            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
+              <span style="font-size:18px;">📁</span>
+              <strong style="margin-top:4px; font-size:13px;">Google Drive</strong>
+              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
+            </div>
+            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
+              <span style="font-size:18px;">☁️</span>
+              <strong style="margin-top:4px; font-size:13px;">OneDrive</strong>
+              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
+            </div>
+            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
+              <span style="font-size:18px;">📦</span>
+              <strong style="margin-top:4px; font-size:13px;">Dropbox</strong>
+              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
+            </div>
+            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
+              <span style="font-size:18px;">🚀</span>
+              <strong style="margin-top:4px; font-size:13px;">Gofile</strong>
+              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
+            </div>
+            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
+              <span style="font-size:18px;">🗄️</span>
+              <strong style="margin-top:4px; font-size:13px;">1Fichier</strong>
+              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
+            </div>
+            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
+              <span style="font-size:18px;">💾</span>
+              <strong style="margin-top:4px; font-size:13px;">Pixeldrain</strong>
+              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
+            </div>
+          </div>
+          <span class="help-text" style="margin-top:14px;">Manage your linked OAuth cloud accounts on your <a href="https://torbox.app/settings" target="_blank">TorBox Settings Page</a>.</span>
+        </div>
+      </section>
+
+      <!-- SECTION 4: SUPPORTED HOSTERS -->
       <section id="section-hosters" class="settings-section">
         <div class="section-header">
-          <h2>Supported Hosters & Streams (<span id="hostersCount">300+</span>)</h2>
-          <p>All file hosters and video streaming platforms supported by TorBox debrid engine.</p>
+          <h2>Supported Hosters & Providers (<span id="hostersCount">300+</span>)</h2>
+          <p>All file hosters and download services supported by the TorBox debrid engine.</p>
         </div>
 
         <div class="card">
@@ -226,7 +274,7 @@
         </div>
       </section>
 
-      <!-- SECTION 4: DOMAIN RULES -->
+      <!-- SECTION 5: DOMAIN RULES -->
       <section id="section-rules" class="settings-section">
         <div class="section-header">
           <h2>Custom Domain Exclusions</h2>

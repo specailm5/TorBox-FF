@@ -1,5 +1,10 @@
 /**
  * TorBox Popup Dashboard Controller
+ * Full v2.1 feature set:
+ * - Device code 1-click authorization
+ * - Multi-file torrent file inspection & selective downloads
+ * - Magnet to .torrent conversion & metadata inspector
+ * - Queued downloads manager
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -11,15 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const userTierBadge = document.getElementById('userTierBadge');
   const userQuota = document.getElementById('userQuota');
   const activeDlCountBadge = document.getElementById('activeDlCountBadge');
+  const authBanner = document.getElementById('authBanner');
+  const quickLoginBtn = document.getElementById('quickLoginBtn');
 
   // Scanner Tab Elements
   const countCachedEl = document.getElementById('countCached');
   const countNotCachedEl = document.getElementById('countNotCached');
   const countTotalEl = document.getElementById('countTotal');
-  const batchActionBar = document.getElementById('batchActionBar');
-  const batchCachedCountEl = document.getElementById('batchCachedCount');
-  const batchDownloadCachedBtn = document.getElementById('batchDownloadCachedBtn');
-  const batchAddCloudBtn = document.getElementById('batchAddCloudBtn');
   const linkSearchInput = document.getElementById('linkSearchInput');
   const rescanPageBtn = document.getElementById('rescanPageBtn');
   const scannerChips = document.querySelectorAll('.filter-chips .chip');
@@ -35,12 +38,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const refreshDownloadsBtn = document.getElementById('refreshDownloadsBtn');
   const dlFilterChips = document.querySelectorAll('[data-dl-filter]');
 
+  const deviceAuthModal = document.getElementById('deviceAuthModal');
+  const authCodeDisplay = document.getElementById('authCodeDisplay');
+  const authVerifyLink = document.getElementById('authVerifyLink');
+  const authStatusText = document.getElementById('authStatusText');
+  const closeAuthModalBtn = document.getElementById('closeAuthModalBtn');
+
   // Internal State
   let currentTab = 'scanner';
   let scannerFilter = 'all';
   let dlFilter = 'all';
   let pageLinksCache = [];
   let downloadsCache = [];
+  let openGroups = new Set();
+  let authPollTimer = null;
   let pollInterval = null;
 
   // 1. Settings Link
@@ -87,15 +98,68 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           userQuota.textContent = u.username || 'Active';
         }
+
+        authBanner.style.display = 'none';
       } else {
-        userTierBadge.textContent = 'CONFIG';
+        userTierBadge.textContent = 'GUEST';
         userTierBadge.style.background = '#ef4444';
-        userQuota.textContent = 'Set API Key';
+        userQuota.textContent = 'Sign In';
+        authBanner.style.display = 'block';
       }
     });
   }
 
-  // 4. Scanner Tab Controller
+  // 4. Device Code 1-Click Login Controller
+  quickLoginBtn.addEventListener('click', () => {
+    quickLoginBtn.disabled = true;
+    quickLoginBtn.textContent = 'Connecting...';
+
+    chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.START_DEVICE_AUTH }, (res) => {
+      quickLoginBtn.disabled = false;
+      quickLoginBtn.textContent = '⚡ 1-Click Sign In';
+
+      if (res && res.success && res.authData) {
+        const data = res.authData;
+        authCodeDisplay.textContent = data.user_code || data.device_code || '------';
+        authVerifyLink.href = data.verification_url || 'https://torbox.app/auth/device';
+        authStatusText.textContent = '⏳ Waiting for browser confirmation...';
+
+        deviceAuthModal.style.display = 'flex';
+        chrome.tabs.create({ url: authVerifyLink.href });
+
+        if (authPollTimer) clearInterval(authPollTimer);
+        const pollIntervalMs = (data.interval || 5) * 1000;
+
+        authPollTimer = setInterval(() => {
+          chrome.runtime.sendMessage({
+            action: TorBoxConstants.MESSAGES.CHECK_DEVICE_AUTH_TOKEN,
+            deviceCode: data.device_code
+          }, (tokenRes) => {
+            if (tokenRes && tokenRes.success) {
+              clearInterval(authPollTimer);
+              authStatusText.textContent = '🟢 Connected successfully!';
+              setTimeout(() => {
+                deviceAuthModal.style.display = 'none';
+                loadUserInfo();
+                fetchPageLinks();
+              }, 1200);
+            }
+          });
+        }, pollIntervalMs);
+      } else {
+        alert("Failed to start device authentication. Please configure API key in Settings.");
+      }
+    });
+  });
+
+  closeAuthModalBtn.addEventListener('click', () => {
+    deviceAuthModal.style.display = 'none';
+    if (authPollTimer) clearInterval(authPollTimer);
+  });
+
+
+
+  // 6. Scanner Tab Controller
   function fetchPageLinks() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs || tabs.length === 0) {
@@ -121,13 +185,6 @@ document.addEventListener('DOMContentLoaded', () => {
     countCachedEl.textContent = cached;
     countNotCachedEl.textContent = notCached;
     countTotalEl.textContent = total;
-
-    if (cached > 0) {
-      batchActionBar.style.display = 'flex';
-      batchCachedCountEl.textContent = cached;
-    } else {
-      batchActionBar.style.display = 'none';
-    }
   }
 
   function renderScannerEmpty(message) {
@@ -176,7 +233,6 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStatsCounters(cachedCount, notCachedCount, pageLinksCache.length);
 
     let filtered = pageLinksCache.filter(link => {
-      // Search filter
       if (query) {
         const matchesQuery = (link.text && link.text.toLowerCase().includes(query)) ||
                              (link.url && link.url.toLowerCase().includes(query)) ||
@@ -184,7 +240,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!matchesQuery) return false;
       }
 
-      // Chip filter
       if (scannerFilter === 'cached') return link.state === TorBoxConstants.STATES.CACHED;
       if (scannerFilter === 'torrents') return link.type === 'torrent' || link.url.startsWith('magnet:');
       if (scannerFilter === 'hosters') return link.type === 'webdl';
@@ -196,19 +251,68 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Group by section/heading
+    // Group links by game / article title
     const groups = {};
     filtered.forEach(link => {
-      const g = link.group || 'Page Links';
+      let g = (link.group && link.group.trim()) || 'Page Links';
+      if (g.length < 2 || !/[a-zA-Z0-9]/.test(g)) {
+        g = 'Page Links';
+      }
       if (!groups[g]) groups[g] = [];
       groups[g].push(link);
     });
 
-    let html = '';
-    Object.keys(groups).forEach(groupName => {
-      html += `<div class="link-group-header">${escapeHtml(groupName)}</div>`;
+    // Helper for link sorting: cached first, then checking, then uncached, then errors
+    function getLinkPriority(l) {
+      if (l.state === TorBoxConstants.STATES.CACHED) return 1;
+      if (l.state === TorBoxConstants.STATES.CHECKING) return 2;
+      if (l.state === TorBoxConstants.STATES.NOT_CACHED) return 3;
+      if (l.state === TorBoxConstants.STATES.ERROR) return 4;
+      return 5;
+    }
 
-      groups[groupName].forEach(link => {
+    // 1. Sort links within each group (CACHED FIRST)
+    Object.keys(groups).forEach(g => {
+      groups[g].sort((a, b) => getLinkPriority(a) - getLinkPriority(b));
+    });
+
+    // 2. Sort groups so groups with cached links appear first
+    const sortedGroupNames = Object.keys(groups)
+      .filter(g => g && g.trim().length >= 2 && groups[g].length > 0)
+      .sort((a, b) => {
+        const getGroupScore = (gName) => {
+          const gLinks = groups[gName] || [];
+          const hasCached = gLinks.some(l => l.state === TorBoxConstants.STATES.CACHED);
+          if (hasCached) return 2;
+          const hasChecking = gLinks.some(l => l.state === TorBoxConstants.STATES.CHECKING);
+          if (hasChecking) return 1;
+          return 0;
+        };
+        return getGroupScore(b) - getGroupScore(a);
+      });
+
+    const currentScroll = pageLinksList.scrollTop;
+    let html = '';
+    sortedGroupNames.forEach((groupName) => {
+      const groupLinks = groups[groupName];
+      const gCachedLinks = groupLinks.filter(l => l.state === TorBoxConstants.STATES.CACHED);
+      const gCachedCount = gCachedLinks.length;
+      const isOpen = openGroups.has(groupName);
+
+      html += `
+        <div class="link-group-accordion ${isOpen ? 'open' : ''} ${gCachedCount > 0 ? 'has-cached' : ''}" data-group="${escapeHtml(groupName)}">
+          <div class="link-group-header-btn" role="button" tabindex="0">
+            <span class="link-group-title" title="${escapeHtml(groupName)}">🎮 ${escapeHtml(groupName)}</span>
+            <div class="link-group-meta">
+              ${gCachedCount > 0 ? `<span class="group-cached-badge">🟢 ${gCachedCount} cached</span>` : ''}
+              <span class="group-count-badge">${groupLinks.length}</span>
+              <span class="link-group-chevron">▼</span>
+            </div>
+          </div>
+          <div class="link-group-body">
+      `;
+
+      groupLinks.forEach(link => {
         const isCached = link.state === TorBoxConstants.STATES.CACHED;
         const isChecking = link.state === TorBoxConstants.STATES.CHECKING;
         const isError = link.state === TorBoxConstants.STATES.ERROR;
@@ -221,10 +325,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const domain = TorBoxUtils.getHostname(link.url) || 'link';
 
+        const cardStyle = isCached ? 'border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.05);' : '';
+
         html += `
-          <div class="link-card" data-url="${escapeHtml(link.url)}">
+          <div class="link-card" data-url="${escapeHtml(link.url)}" style="${cardStyle}">
             <div class="link-title-row">
-              <span class="link-name" title="${escapeHtml(link.url)}">${escapeHtml(link.text || link.url)}</span>
+              <span class="link-name" title="${escapeHtml(link.url)}" style="${isCached ? 'color: #34d399; font-weight:600;' : ''}">${escapeHtml(link.text || link.url)}</span>
               <span class="link-type-pill">${escapeHtml(link.type || domain)}</span>
             </div>
             <div class="link-actions-row">
@@ -247,9 +353,15 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         `;
       });
+
+      html += `
+          </div>
+        </div>
+      `;
     });
 
     pageLinksList.innerHTML = html;
+    pageLinksList.scrollTop = currentScroll;
   }
 
   // Scanner Search & Filter Event Handlers
@@ -265,7 +377,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Helper to trigger download in page context so IDM / external download managers can intercept it
   function triggerDownloadUrl(downloadUrl, engine = 'idm') {
     if (!downloadUrl) return;
 
@@ -288,15 +399,30 @@ document.addEventListener('DOMContentLoaded', () => {
             chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.START_NATIVE_DOWNLOAD, url: downloadUrl });
           });
         } else {
-          // Fallback for restricted tabs
           chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.START_NATIVE_DOWNLOAD, url: downloadUrl });
         }
       });
     }
   }
 
-  // Link Action Delegation
+  // Link Action Delegation & Accordion Toggle
   pageLinksList.addEventListener('click', async (e) => {
+    const headerBtn = e.target.closest('.link-group-header-btn');
+    if (headerBtn) {
+      const accordion = headerBtn.closest('.link-group-accordion');
+      if (accordion) {
+        const gName = accordion.dataset.group;
+        if (accordion.classList.contains('open')) {
+          accordion.classList.remove('open');
+          if (gName) openGroups.delete(gName);
+        } else {
+          accordion.classList.add('open');
+          if (gName) openGroups.add(gName);
+        }
+      }
+      return;
+    }
+
     const dlBtn = e.target.closest('.btn-download-link');
     const cloudBtn = e.target.closest('.btn-add-cloud');
     const copyBtn = e.target.closest('.btn-copy-link');
@@ -315,14 +441,25 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (cloudBtn) {
       const url = cloudBtn.dataset.url;
       cloudBtn.textContent = '⏳ ...';
+      cloudBtn.disabled = true;
       const isMagnet = url.startsWith('magnet:?');
-      const actionMsg = isMagnet ? TorBoxConstants.MESSAGES.CREATE_TORRENT : TorBoxConstants.MESSAGES.CREATE_WEBDL;
+      const isTorrent = url.toLowerCase().endsWith('.torrent') || url.toLowerCase().includes('.torrent?');
+      const isUsenet = url.toLowerCase().endsWith('.nzb') || url.toLowerCase().includes('.nzb?');
+
+      let actionMsg = TorBoxConstants.MESSAGES.CREATE_WEBDL;
+      if (isMagnet || isTorrent) actionMsg = TorBoxConstants.MESSAGES.CREATE_TORRENT;
+      else if (isUsenet) actionMsg = TorBoxConstants.MESSAGES.CREATE_USENET;
 
       chrome.runtime.sendMessage({ action: actionMsg, url }, (res) => {
+        cloudBtn.disabled = false;
         if (res && res.success) {
           cloudBtn.textContent = '✔️ Added';
+          cloudBtn.style.background = 'var(--emerald)';
+          cloudBtn.title = res.detail || 'Added to TorBox!';
         } else {
           cloudBtn.textContent = '⚠️ Failed';
+          cloudBtn.style.background = 'var(--ruby)';
+          cloudBtn.title = (res && res.error) ? res.error : 'Failed to add';
         }
       });
     } else if (copyBtn) {
@@ -333,53 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Batch Download Cached
-  batchDownloadCachedBtn.addEventListener('click', () => {
-    const cachedLinks = pageLinksCache.filter(l => l.state === TorBoxConstants.STATES.CACHED);
-    if (cachedLinks.length === 0) return;
-
-    batchDownloadCachedBtn.textContent = '⏳ Starting batch...';
-    cachedLinks.forEach((link, idx) => {
-      setTimeout(() => {
-        chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.DOWNLOAD_CACHED, url: link.url }, (res) => {
-          if (res && res.success && res.downloadUrl) {
-            triggerDownloadUrl(res.downloadUrl, res.engine);
-          }
-        });
-      }, idx * 400);
-    });
-
-    setTimeout(() => {
-      batchDownloadCachedBtn.textContent = '✔️ All Started!';
-      setTimeout(() => {
-        batchDownloadCachedBtn.innerHTML = `⚡ Download All Cached (<span id="batchCachedCount">${cachedLinks.length}</span>)`;
-      }, 2000);
-    }, cachedLinks.length * 400 + 500);
-  });
-
-  // Batch Add to Cloud
-  batchAddCloudBtn.addEventListener('click', () => {
-    const uncachedLinks = pageLinksCache.filter(l => l.state !== TorBoxConstants.STATES.CACHED);
-    if (uncachedLinks.length === 0) return;
-
-    batchAddCloudBtn.textContent = '⏳ Adding batch...';
-    uncachedLinks.forEach((link, idx) => {
-      setTimeout(() => {
-        const isMagnet = link.url.startsWith('magnet:?');
-        const actionMsg = isMagnet ? TorBoxConstants.MESSAGES.CREATE_TORRENT : TorBoxConstants.MESSAGES.CREATE_WEBDL;
-        chrome.runtime.sendMessage({ action: actionMsg, url: link.url });
-      }, idx * 300);
-    });
-
-    setTimeout(() => {
-      batchAddCloudBtn.textContent = '✔️ Added to TorBox!';
-      setTimeout(() => {
-        batchAddCloudBtn.innerHTML = '<span>Add All to TorBox</span>';
-      }, 2000);
-    }, uncachedLinks.length * 300 + 500);
-  });
-
-  // 5. Quick Debrid Controller
+  // 7. Quick Debrid Controller
   debridCheckBtn.addEventListener('click', async () => {
     const rawUrl = (debridInput.value || '').trim();
     if (!rawUrl) {
@@ -393,9 +484,13 @@ document.addEventListener('DOMContentLoaded', () => {
     debridResultBox.style.display = 'block';
     debridResultBox.innerHTML = `<div class="loading-spinner-box" style="padding:10px;"><div class="spinner"></div><span>Querying TorBox API...</span></div>`;
 
+    const isMagnet = rawUrl.startsWith('magnet:?');
+    const isMedia = TorBoxUtils.isVideoOrAudio(rawUrl);
+
     chrome.runtime.sendMessage({
       action: TorBoxConstants.MESSAGES.CHECK_CACHE,
-      urls: [rawUrl]
+      urls: [rawUrl],
+      listFiles: true
     }, (res) => {
       debridCheckBtn.disabled = false;
       debridCheckBtn.innerHTML = `
@@ -413,16 +508,22 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="user-tier-badge" style="background:${isCached ? 'var(--emerald)' : 'var(--indigo)'}">${isCached ? 'CACHED' : 'QUEUE'}</span>
         </div>
         <div style="font-size:11px; color:var(--text-muted); word-break:break-all;">${escapeHtml(rawUrl.substring(0, 100))}</div>
-        <div style="display:flex; gap:6px; margin-top:4px;">
+        
+        <div style="display:grid; grid-template-columns:1fr; gap:6px; margin-top:6px;">
           ${isCached ? `
-            <button id="debridInstantDlBtn" class="btn btn-emerald" style="width:100%; padding:6px 10px;">
-              ⚡ Direct Download (CDN)
+            <button id="debridInstantDlBtn" class="btn btn-emerald" style="padding:6px 10px; font-size:11px;">
+              ⚡ Direct Download
             </button>
           ` : `
-            <button id="debridQueueBtn" class="btn btn-indigo" style="width:100%; padding:6px 10px;">
-              ☁️ Add to Cloud Download Queue
+            <button id="debridQueueBtn" class="btn btn-indigo" style="padding:6px 10px; font-size:11px;">
+              ☁️ Add to TorBox Queue
             </button>
           `}
+          ${isMagnet ? `
+            <button id="debridConvertTorrentBtn" class="btn btn-secondary" style="padding:6px 10px; font-size:11px;">
+              💾 Save as .torrent File
+            </button>
+          ` : ''}
         </div>
       `;
 
@@ -441,17 +542,48 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
 
+      const convertBtn = document.getElementById('debridConvertTorrentBtn');
+      if (convertBtn) {
+        convertBtn.addEventListener('click', () => {
+          convertBtn.textContent = '⏳ Converting...';
+          chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.MAGNET_TO_FILE, magnet: rawUrl }, (mRes) => {
+            if (mRes && mRes.success && mRes.torrentData) {
+              const name = TorBoxUtils.extractMagnetName(rawUrl) || 'download';
+              const blobUrl = `data:application/x-bittorrent;base64,${btoa(unescape(encodeURIComponent(JSON.stringify(mRes.torrentData))))}`;
+              chrome.runtime.sendMessage({
+                action: TorBoxConstants.MESSAGES.START_NATIVE_DOWNLOAD,
+                url: blobUrl,
+                filename: `${name}.torrent`
+              });
+              convertBtn.textContent = '✔️ Saved .torrent!';
+            } else {
+              convertBtn.textContent = '⚠️ Conversion Failed';
+            }
+          });
+        });
+      }
+
       const queueBtn = document.getElementById('debridQueueBtn');
       if (queueBtn) {
         queueBtn.addEventListener('click', () => {
           queueBtn.textContent = '⏳ Adding...';
+          queueBtn.disabled = true;
           const isMagnet = rawUrl.startsWith('magnet:?');
-          const msg = isMagnet ? TorBoxConstants.MESSAGES.CREATE_TORRENT : TorBoxConstants.MESSAGES.CREATE_WEBDL;
+          const isTorrent = rawUrl.toLowerCase().endsWith('.torrent') || rawUrl.toLowerCase().includes('.torrent?');
+          const isUsenet = rawUrl.toLowerCase().endsWith('.nzb') || rawUrl.toLowerCase().includes('.nzb?');
+
+          let msg = TorBoxConstants.MESSAGES.CREATE_WEBDL;
+          if (isMagnet || isTorrent) msg = TorBoxConstants.MESSAGES.CREATE_TORRENT;
+          else if (isUsenet) msg = TorBoxConstants.MESSAGES.CREATE_USENET;
+
           chrome.runtime.sendMessage({ action: msg, url: rawUrl }, (qRes) => {
+            queueBtn.disabled = false;
             if (qRes && qRes.success) {
               queueBtn.textContent = '✔️ Added to TorBox!';
+              queueBtn.style.background = 'var(--emerald)';
             } else {
-              queueBtn.textContent = '⚠️ Failed to Add';
+              queueBtn.textContent = '⚠️ ' + ((qRes && qRes.error) ? qRes.error.substring(0, 30) : 'Failed to Add');
+              queueBtn.style.background = 'var(--ruby)';
             }
           });
         });
@@ -459,11 +591,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // 6. Cloud Downloads Controller
+  // 8. Cloud Downloads Controller (Multi-File Explorer)
   function fetchDownloads() {
     chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.GET_ACTIVE_DOWNLOADS }, (res) => {
       if (!res || !res.success) {
-        downloadsList.innerHTML = `<div class="empty-state"><p style="color:var(--ruby)">Failed to load downloads. Check API Key.</p></div>`;
+        downloadsList.innerHTML = `<div class="empty-state"><p style="color:var(--ruby)">Failed to load downloads. Check connection.</p></div>`;
         return;
       }
 
@@ -484,13 +616,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderDownloadsList() {
     let filtered = downloadsCache.filter(dl => {
       const isDone = dl.status === 'completed' || dl.status === 'cached';
-      if (dlFilter === 'active') return !isDone;
+      if (dlFilter === 'active') return !isDone && !dl.isQueued;
+      if (dlFilter === 'queued') return dl.isQueued;
       if (dlFilter === 'completed') return isDone;
       return true;
     });
 
     if (filtered.length === 0) {
-      downloadsList.innerHTML = `<div class="empty-state"><p>No ${dlFilter === 'all' ? '' : dlFilter} downloads found.</p></div>`;
+      downloadsList.innerHTML = `<div class="empty-state"><p>No ${dlFilter === 'all' ? '' : dlFilter} items found.</p></div>`;
       return;
     }
 
@@ -502,6 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const progressPercent = Math.min(100, (dl.progress || 0) * 100).toFixed(1);
       const speedStr = dl.speed > 0 ? ` • ${TorBoxUtils.formatSpeed(dl.speed)}` : '';
       const sizeStr = dl.size > 0 ? TorBoxUtils.formatBytes(dl.size) : '';
+      const hasFiles = Array.isArray(dl.files) && dl.files.length > 1;
 
       html += `
         <div class="download-item-card" data-id="${dl.id}" data-type="${dl.type}">
@@ -518,15 +652,45 @@ document.addEventListener('DOMContentLoaded', () => {
             <span>${escapeHtml(dl.status)} • ${progressPercent}%${speedStr} ${sizeStr ? `(${sizeStr})` : ''}</span>
             <div class="dl-item-controls">
               ${isDone ? `
-                <button class="mini-btn dl btn-trigger-dl" data-id="${dl.id}" data-type="${dl.type}" title="Direct Download to PC">
-                  ⚡ DL
+                <button class="mini-btn dl btn-trigger-dl" data-id="${dl.id}" data-type="${dl.type}" title="Download Full Zip to PC">
+                  ⚡ Zip
                 </button>
               ` : ''}
-              <button class="mini-btn copy btn-delete-dl" data-id="${dl.id}" data-type="${dl.type}" title="Delete Download" style="color:var(--ruby);">
+              <button class="mini-btn copy btn-delete-dl" data-id="${dl.id}" data-type="${dl.isQueued ? 'queued' : dl.type}" title="Delete Item" style="color:var(--ruby);">
                 🗑️
               </button>
             </div>
           </div>
+
+          ${hasFiles ? `
+            <div class="dl-files-container" style="margin-top:4px;">
+              <button class="dl-files-toggle" data-id="${dl.id}">
+                <span>📂 View ${dl.files.length} individual files</span>
+              </button>
+              <div class="dl-files-list" id="files-list-${dl.id}" style="display:none; margin-top:4px;">
+                ${dl.files.map(f => {
+                  const fName = f.name || f.short_name || 'File';
+                  const isFileMedia = TorBoxUtils.isVideoOrAudio(fName);
+                  const fSize = f.size ? TorBoxUtils.formatBytes(f.size) : '';
+                  return `
+                    <div class="dl-file-row">
+                      <div class="dl-file-info">
+                        <span class="dl-file-name" title="${escapeHtml(fName)}">${escapeHtml(fName)}</span>
+                        <span class="dl-file-size">${fSize}</span>
+                      </div>
+                      <div class="dl-file-actions">
+                        ${isDone ? `
+                          <button class="mini-btn dl btn-file-dl" data-torrent-id="${dl.id}" data-type="${dl.type}" data-file-id="${f.id}" title="Download this file">
+                            ⚡
+                          </button>
+                        ` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
         </div>
       `;
     });
@@ -549,12 +713,43 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchDownloads();
   });
 
-  // Downloads Actions Delegation
+  // Downloads Actions Delegation (Zip, Single Files, Delete)
   downloadsList.addEventListener('click', (e) => {
     const dlBtn = e.target.closest('.btn-trigger-dl');
     const deleteBtn = e.target.closest('.btn-delete-dl');
+    const toggleFilesBtn = e.target.closest('.dl-files-toggle');
+    const fileDlBtn = e.target.closest('.btn-file-dl');
 
-    if (dlBtn) {
+    if (toggleFilesBtn) {
+      const id = toggleFilesBtn.dataset.id;
+      const listEl = document.getElementById(`files-list-${id}`);
+      if (listEl) {
+        const isHidden = listEl.style.display === 'none';
+        listEl.style.display = isHidden ? 'flex' : 'none';
+        toggleFilesBtn.innerHTML = isHidden ? `<span>▲ Hide files</span>` : `<span>📂 View individual files</span>`;
+      }
+    } else if (fileDlBtn) {
+      const torrentId = parseInt(fileDlBtn.dataset.torrentId);
+      const type = fileDlBtn.dataset.type;
+      const fileId = parseInt(fileDlBtn.dataset.fileId);
+      fileDlBtn.textContent = '⏳';
+
+      chrome.runtime.sendMessage({
+        action: TorBoxConstants.MESSAGES.REQUEST_DOWNLOAD_BY_ID,
+        id: torrentId,
+        type,
+        fileId
+      }, (res) => {
+        if (res && res.success && res.downloadUrl) {
+          fileDlBtn.textContent = '✔️';
+          triggerDownloadUrl(res.downloadUrl, res.engine);
+          setTimeout(() => { fileDlBtn.textContent = '⚡'; }, 2000);
+        } else {
+          fileDlBtn.textContent = '⚠️';
+        }
+      });
+
+    } else if (dlBtn) {
       const id = parseInt(dlBtn.dataset.id);
       const type = dlBtn.dataset.type;
       dlBtn.textContent = '⏳ ...';
@@ -612,5 +807,5 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (currentTab === 'scanner') {
       fetchPageLinks();
     }
-  }, 3500);
+  }, 4000);
 });
