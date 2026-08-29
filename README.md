@@ -15,19 +15,7 @@ A modern, high-performance browser extension (compatible with **Firefox, Chrome,
   - Cached files are downloaded directly via TorBox high-speed CDN through your native browser download manager (compatible with IDM, JDownloader, FDM).
   - Uncached links can be queued to your TorBox cloud with 1 click (`☁️ To TB`).
 
-- **✨ Dark Glassmorphic Dashboard & Popup**:
-  - **Scanner Tab**: Real-time link counts, live search filter, category chips, and **"⚡ Download All Cached"** / **"☁️ Add All to TorBox"** batch actions.
-  - **Quick Debrid Tab**: Paste any Magnet link or Filehoster URL directly into the popup to instantly check cache and download.
-  - **Cloud Activity Tab**: Live TorBox queue manager displaying active/completed downloads, real-time progress bars, speeds, and CDN download triggers.
-  - **Account & Quota Pill**: Live view of your account plan tier (Pro / Essential / Free) and daily bandwidth quota usage.
 
-- **🛸 Floating Quick-Action Dock**:
-  - Non-intrusive bottom-right floating badge displaying detected links and real-time cache counts, with a slide-up drawer for instant 1-click downloads.
-
-- **⚙️ Full-Featured Options Dashboard**:
-  - Account API verification with plan tier and expiration details.
-  - Granular scanning preferences (domain whitelist & blacklist rules, notifications, download manager routing).
-  - **Searchable Hosters Explorer**: Interactive directory of all 300+ supported hosters and stream providers.
 
 ---
 
