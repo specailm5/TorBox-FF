@@ -254,8 +254,9 @@ class TorBoxUI {
           margin-top: 2px;
         }
         .tb-group-badge {
-          font-size: 9px;
+          font-size: 10px;
           font-weight: 800;
+          letter-spacing: 0.3px;
           color: #34d399;
           background: rgba(16, 185, 129, 0.15);
           border: 1px solid rgba(16, 185, 129, 0.35);
@@ -263,14 +264,14 @@ class TorBoxUI {
           border-radius: 10px;
         }
         .tb-group-count {
-          font-size: 9px;
+          font-size: 10px;
           color: #94a3b8;
           background: rgba(255, 255, 255, 0.06);
           padding: 2px 6px;
           border-radius: 10px;
         }
         .tb-group-chevron {
-          font-size: 8px;
+          font-size: 10px;
           color: #64748b;
           transition: transform 0.2s;
         }
