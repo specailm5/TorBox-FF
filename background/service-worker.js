@@ -802,8 +802,10 @@ async function getTorrentInfo(hashOrMagnet) {
 }
 
 /**
- * Starts Device Code OAuth Authorization flow.
+ * Starts Device Code OAuth Authorization flow and runs background polling.
  */
+let activeDeviceAuthPollTimer = null;
+
 async function startDeviceAuth() {
   try {
     const response = await fetch(`${TorBoxConstants.API_BASE}/v1/api/user/auth/device/start?app=TorBox%20Extension`);
@@ -811,6 +813,30 @@ async function startDeviceAuth() {
     if (!response.ok || data.success === false) {
       throw new Error(data.detail || data.error || 'Failed to start device authorization');
     }
+
+    const authData = data.data;
+    if (authData && authData.device_code) {
+      if (activeDeviceAuthPollTimer) clearInterval(activeDeviceAuthPollTimer);
+      const intervalMs = Math.max((authData.interval || 5) * 1000, 3000);
+      let attempts = 0;
+      const maxAttempts = 120; // 10 minutes maximum
+
+      activeDeviceAuthPollTimer = setInterval(async () => {
+        attempts++;
+        if (attempts > maxAttempts) {
+          clearInterval(activeDeviceAuthPollTimer);
+          activeDeviceAuthPollTimer = null;
+          return;
+        }
+
+        const res = await checkDeviceAuthToken(authData.device_code);
+        if (res && res.success && res.token) {
+          clearInterval(activeDeviceAuthPollTimer);
+          activeDeviceAuthPollTimer = null;
+        }
+      }, intervalMs);
+    }
+
     return { success: true, authData: data.data };
   } catch (error) {
     return { success: false, error: error.message };
@@ -829,9 +855,24 @@ async function checkDeviceAuthToken(deviceCode) {
     });
     const data = await response.json();
 
-    if (response.ok && data.success && data.data && data.data.token) {
-      const token = data.data.token;
+    let token = null;
+    if (data && data.success) {
+      if (typeof data.data === 'string' && data.data.trim()) {
+        token = data.data.trim();
+      } else if (data.data && typeof data.data === 'object') {
+        token = data.data.session_token || data.data.token || data.data.access_token || data.data.api_token || data.data.api_key || data.data.key;
+      } else if (typeof data.token === 'string') {
+        token = data.token;
+      } else if (typeof data.session_token === 'string') {
+        token = data.session_token;
+      } else if (typeof data.access_token === 'string') {
+        token = data.access_token;
+      }
+    }
+
+    if (token) {
       await chrome.storage.local.set({ torboxApiKey: token });
+      showNotification('TorBox - Connected', 'Successfully signed in to your TorBox account!');
       return { success: true, token };
     }
 

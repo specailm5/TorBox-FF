@@ -110,6 +110,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 4. Device Code 1-Click Login Controller
+  authCodeDisplay.style.cursor = 'pointer';
+  authCodeDisplay.title = 'Click to copy code';
+  authCodeDisplay.addEventListener('click', () => {
+    const code = authCodeDisplay.textContent.trim();
+    if (code && code !== '------') {
+      navigator.clipboard.writeText(code).then(() => {
+        authStatusText.textContent = '📋 Code copied to clipboard!';
+      });
+    }
+  });
+
   quickLoginBtn.addEventListener('click', () => {
     quickLoginBtn.disabled = true;
     quickLoginBtn.textContent = 'Connecting...';
@@ -120,9 +131,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (res && res.success && res.authData) {
         const data = res.authData;
-        authCodeDisplay.textContent = data.user_code || data.device_code || '------';
-        authVerifyLink.href = data.verification_url || 'https://torbox.app/auth/device';
-        authStatusText.textContent = '⏳ Waiting for browser confirmation...';
+        const authCode = data.code || data.user_code || data.device_code || '------';
+        authCodeDisplay.textContent = authCode;
+        authVerifyLink.href = data.verification_url || data.friendly_verification_url || 'https://torbox.app/oauth/device';
+        authStatusText.textContent = '⏳ Waiting for browser confirmation... (Code copied to clipboard)';
+
+        try {
+          navigator.clipboard.writeText(authCode);
+        } catch (e) {}
 
         deviceAuthModal.style.display = 'flex';
         chrome.tabs.create({ url: authVerifyLink.href });
@@ -155,6 +171,16 @@ document.addEventListener('DOMContentLoaded', () => {
   closeAuthModalBtn.addEventListener('click', () => {
     deviceAuthModal.style.display = 'none';
     if (authPollTimer) clearInterval(authPollTimer);
+  });
+
+  // Listen for storage changes (background login completion)
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.torboxApiKey && changes.torboxApiKey.newValue) {
+      deviceAuthModal.style.display = 'none';
+      if (authPollTimer) clearInterval(authPollTimer);
+      loadUserInfo();
+      fetchPageLinks();
+    }
   });
 
 

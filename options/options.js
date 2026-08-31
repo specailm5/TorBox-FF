@@ -100,6 +100,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 3. 1-Click Device Code Login
+  optAuthCodeDisplay.style.cursor = 'pointer';
+  optAuthCodeDisplay.title = 'Click to copy code';
+  optAuthCodeDisplay.addEventListener('click', () => {
+    const code = optAuthCodeDisplay.textContent.trim();
+    if (code && code !== '------') {
+      navigator.clipboard.writeText(code).then(() => {
+        optAuthStatusText.textContent = '📋 Code copied to clipboard!';
+      });
+    }
+  });
+
   optDeviceAuthBtn.addEventListener('click', () => {
     optDeviceAuthBtn.disabled = true;
     optDeviceAuthBtn.textContent = 'Connecting...';
@@ -110,11 +121,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (res && res.success && res.authData) {
         const data = res.authData;
-        optAuthCodeDisplay.textContent = data.user_code || data.device_code || '------';
-        optAuthStatusText.textContent = '⏳ Waiting for browser confirmation...';
+        const authCode = data.code || data.user_code || data.device_code || '------';
+        optAuthCodeDisplay.textContent = authCode;
+        optAuthStatusText.textContent = '⏳ Waiting for browser confirmation... (Code copied to clipboard)';
         optAuthCodeContainer.style.display = 'block';
 
-        window.open(data.verification_url || 'https://torbox.app/auth/device', '_blank');
+        try {
+          navigator.clipboard.writeText(authCode);
+        } catch (e) {}
+
+        window.open(data.verification_url || data.friendly_verification_url || 'https://torbox.app/oauth/device', '_blank');
 
         if (deviceAuthPollTimer) clearInterval(deviceAuthPollTimer);
         const intervalMs = (data.interval || 5) * 1000;
@@ -139,6 +155,19 @@ document.addEventListener('DOMContentLoaded', () => {
         alert("Failed to initiate device authentication.");
       }
     });
+  });
+
+  // Listen for background login completion
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.torboxApiKey && changes.torboxApiKey.newValue) {
+      if (deviceAuthPollTimer) clearInterval(deviceAuthPollTimer);
+      optAuthStatusText.textContent = '🟢 Connected successfully!';
+      apiKeyInput.value = changes.torboxApiKey.newValue;
+      testConnection(changes.torboxApiKey.newValue, true);
+      setTimeout(() => {
+        optAuthCodeContainer.style.display = 'none';
+      }, 2000);
+    }
   });
 
   // 4. API Key Password Visibility Toggle
