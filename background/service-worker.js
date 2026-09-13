@@ -12,11 +12,89 @@
  * - Enhanced context menus
  */
 
-// Import shared dependencies
+// Import shared dependencies safely for both Chromium Service Workers and Firefox Event Pages
 try {
-  importScripts('../shared/constants.js', '../shared/utils.js', '../lib/md5.js');
+  if (typeof importScripts === 'function') {
+    try {
+      importScripts('/shared/constants.js', '/shared/utils.js', '/lib/md5.js');
+    } catch (e1) {
+      importScripts('../shared/constants.js', '../shared/utils.js', '../lib/md5.js');
+    }
+  }
 } catch (e) {
-  console.error("Failed to import scripts in background worker:", e);
+  console.warn("importScripts unavailable or failed:", e);
+}
+
+// Fallback constant definition to prevent any unhandled ReferenceErrors in background
+if (typeof TorBoxConstants === 'undefined') {
+  globalThis.TorBoxConstants = {
+    API_BASE: "https://api.torbox.app",
+    STATES: {
+      PENDING: "pending",
+      CHECKING: "checking",
+      CACHED: "cached",
+      NOT_CACHED: "not_cached",
+      UNSUPPORTED: "unsupported",
+      ERROR: "error"
+    },
+    MESSAGES: {
+      GET_HOSTERS: "GET_HOSTERS",
+      CHECK_CACHE: "CHECK_CACHE",
+      DOWNLOAD_CACHED: "DOWNLOAD_CACHED",
+      START_NATIVE_DOWNLOAD: "START_NATIVE_DOWNLOAD",
+      GET_API_KEY: "GET_API_KEY",
+      SET_API_KEY: "SET_API_KEY",
+      TEST_AUTH: "TEST_AUTH",
+      GET_USER_INFO: "GET_USER_INFO",
+      GET_USER_STATS: "GET_USER_STATS",
+      GET_SETTINGS: "GET_SETTINGS",
+      SET_SETTINGS: "SET_SETTINGS",
+      CREATE_WEBDL: "CREATE_WEBDL",
+      CREATE_USENET: "CREATE_USENET",
+      CREATE_TORRENT: "CREATE_TORRENT",
+      GET_ACTIVE_DOWNLOADS: "GET_ACTIVE_DOWNLOADS",
+      REQUEST_DOWNLOAD_BY_ID: "REQUEST_DOWNLOAD_BY_ID",
+      CONTROL_DOWNLOAD: "CONTROL_DOWNLOAD",
+      UPDATE_BADGE: "UPDATE_BADGE",
+      GET_PAGE_LINKS: "GET_PAGE_LINKS",
+      SHOW_NOTIFICATION: "SHOW_NOTIFICATION",
+      MAGNET_TO_FILE: "MAGNET_TO_FILE",
+      GET_TORRENT_INFO: "GET_TORRENT_INFO",
+      START_DEVICE_AUTH: "START_DEVICE_AUTH",
+      CHECK_DEVICE_AUTH_TOKEN: "CHECK_DEVICE_AUTH_TOKEN",
+      SEND_TO_CLOUD: "SEND_TO_CLOUD",
+      GET_CLOUD_INTEGRATIONS: "GET_CLOUD_INTEGRATIONS"
+    },
+    PLAN_TIERS: {
+      0: { name: "Free", badge: "FREE", color: "#94a3b8" },
+      1: { name: "Essential", badge: "ESSENTIAL", color: "#3b82f6" },
+      2: { name: "Pro", badge: "PRO", color: "#10b981" },
+      3: { name: "Standard", badge: "STANDARD", color: "#8b5cf6" }
+    }
+  };
+}
+
+// Modify request headers via declarativeNetRequest to bypass CORS in browsers
+if (typeof chrome !== 'undefined' && chrome.declarativeNetRequest && chrome.declarativeNetRequest.updateDynamicRules) {
+  chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: [1001],
+    addRules: [
+      {
+        id: 1001,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [
+            { header: 'Origin', operation: 'set', value: 'https://torbox.app' }
+          ]
+        },
+        condition: {
+          urlFilter: '||api.torbox.app',
+          resourceTypes: ['xmlhttprequest', 'other']
+        }
+      }
+    ]
+  }).catch((err) => console.warn("DeclarativeNetRequest rule initialization:", err));
 }
 
 const HOSTER_CACHE_TTL = 60 * 60 * 1000; // 1 hour
@@ -72,7 +150,7 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
   };
 
   let reqBody = body;
-  if (body && !(body instanceof FormData) && typeof body === 'object') {
+  if (body && !(body instanceof FormData) && !(body instanceof URLSearchParams) && typeof body === 'object') {
     headers['Content-Type'] = 'application/json';
     reqBody = JSON.stringify(body);
   }
@@ -195,6 +273,26 @@ async function getUserInfo() {
         settings: u.settings || {}
       }
     };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Tests an API key against TorBox API without saving it to storage.
+ */
+async function testAuth(apiKey) {
+  try {
+    if (!apiKey) throw new Error("No API key provided");
+    const res = await fetch(`${TorBoxConstants.API_BASE}/v1/api/user/me?settings=true`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Accept': 'application/json'
+      }
+    });
+    const data = await res.json();
+    return data;
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -478,7 +576,7 @@ async function downloadCached(url, fileId = null) {
         throw new Error(err);
       }
 
-      const torrentId = createData.data ? (createData.data.torrent_id || createData.data.id) : null;
+      const torrentId = createData.data ? (createData.data.torrent_id || createData.data.torrentId || createData.data.id) : null;
       if (!torrentId) {
         throw new Error("Torrent ID was not returned by TorBox.");
       }
@@ -506,7 +604,7 @@ async function downloadCached(url, fileId = null) {
         throw new Error(err);
       }
 
-      const usenetId = createData.data ? (createData.data.usenet_id || createData.data.id) : null;
+      const usenetId = createData.data ? (createData.data.usenet_id || createData.data.usenetdownload_id || createData.data.usenetdownloadId || createData.data.id) : null;
       if (!usenetId) throw new Error("Usenet ID not returned.");
 
       const dlResult = await requestDirectLink(usenetId, 'usenet', fileId, fileId === null);
@@ -516,14 +614,17 @@ async function downloadCached(url, fileId = null) {
       downloadUrl = dlResult.downloadUrl;
 
     } else {
-      const formData = new FormData();
-      formData.append('link', url);
-      formData.append('add_only_if_cached', 'true');
+      const params = new URLSearchParams();
+      params.append('link', url);
+      params.append('add_only_if_cached', 'true');
 
       const createRes = await fetch(`${TorBoxConstants.API_BASE}/v1/api/webdl/createwebdownload`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}` },
-        body: formData
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: params
       });
       const createData = await createRes.json();
 
@@ -533,7 +634,7 @@ async function downloadCached(url, fileId = null) {
         throw new Error(err);
       }
 
-      const webId = createData.data ? (createData.data.webdownload_id || createData.data.webdl_id || createData.data.id) : null;
+      const webId = createData.data ? (createData.data.webdownload_id || createData.data.webdownloadId || createData.data.webdl_id || createData.data.id) : null;
       if (!webId) throw new Error("WebDL ID not returned.");
 
       const dlResult = await requestDirectLink(webId, 'webdl', fileId, false);
@@ -575,14 +676,17 @@ async function createCloudDownload(url) {
     const isUsenet = url.toLowerCase().endsWith('.nzb') || url.toLowerCase().includes('.nzb?');
 
     let endpoint = '/v1/api/webdl/createwebdownload';
-    const formData = new FormData();
+    let body = null;
+    let isUrlEncoded = false;
 
     if (isMagnet) {
       endpoint = '/v1/api/torrents/createtorrent';
+      const formData = new FormData();
       formData.append('magnet', url);
       formData.append('allow_zip', 'true');
       formData.append('seed', '1');
       formData.append('as_queued', 'false');
+      body = formData;
     } else if (isTorrentFile) {
       let torrentBlob = null;
       try {
@@ -596,29 +700,45 @@ async function createCloudDownload(url) {
 
       if (torrentBlob) {
         endpoint = '/v1/api/torrents/createtorrent';
+        const formData = new FormData();
         formData.append('file', torrentBlob, 'download.torrent');
         formData.append('allow_zip', 'true');
         formData.append('seed', '1');
         formData.append('as_queued', 'false');
+        body = formData;
       } else {
         endpoint = '/v1/api/webdl/createwebdownload';
-        formData.append('link', url);
-        formData.append('as_queued', 'false');
+        const params = new URLSearchParams();
+        params.append('link', url);
+        params.append('as_queued', 'false');
+        body = params;
+        isUrlEncoded = true;
       }
     } else if (isUsenet) {
       endpoint = '/v1/api/usenet/createusenetdownload';
+      const formData = new FormData();
       formData.append('link', url);
       formData.append('post_processing', '-1');
       formData.append('as_queued', 'false');
+      body = formData;
     } else {
-      formData.append('link', url);
-      formData.append('as_queued', 'false');
+      endpoint = '/v1/api/webdl/createwebdownload';
+      const params = new URLSearchParams();
+      params.append('link', url);
+      params.append('as_queued', 'false');
+      body = params;
+      isUrlEncoded = true;
+    }
+
+    const headers = { 'Authorization': `Bearer ${apiKey}` };
+    if (isUrlEncoded) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
     }
 
     let response = await fetch(`${TorBoxConstants.API_BASE}${endpoint}`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      body: formData
+      headers,
+      body
     });
 
     let data = await response.json();
@@ -642,12 +762,15 @@ async function createCloudDownload(url) {
         } catch (e) {}
       } else if (!isUsenet && !isTorrentFile) {
         try {
-          const asyncFormData = new FormData();
-          asyncFormData.append('link', url);
+          const asyncParams = new URLSearchParams();
+          asyncParams.append('link', url);
           const asyncRes = await fetch(`${TorBoxConstants.API_BASE}/v1/api/webdl/asynccreatewebdownload`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${apiKey}` },
-            body: asyncFormData
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: asyncParams
           });
           const asyncData = await asyncRes.json();
           if (asyncRes.ok && asyncData.success !== false) {
@@ -928,11 +1051,13 @@ async function getCloudIntegrations() {
  */
 async function getActiveDownloads() {
   try {
-    const [torrentsRes, webdlRes, usenetRes, queuedRes] = await Promise.allSettled([
+    const [torrentsRes, webdlRes, usenetRes, queuedTorrentRes, queuedUsenetRes, queuedWebdlRes] = await Promise.allSettled([
       apiRequest('/v1/api/torrents/mylist?bypass_cache=true'),
       apiRequest('/v1/api/webdl/mylist?bypass_cache=true'),
       apiRequest('/v1/api/usenet/mylist?bypass_cache=true'),
-      apiRequest('/v1/api/queued/getqueued?bypass_cache=true')
+      apiRequest('/v1/api/queued/getqueued?type=torrent&bypass_cache=true'),
+      apiRequest('/v1/api/queued/getqueued?type=usenet&bypass_cache=true'),
+      apiRequest('/v1/api/queued/getqueued?type=webdl&bypass_cache=true')
     ]);
 
     let downloads = [];
@@ -991,24 +1116,32 @@ async function getActiveDownloads() {
       });
     }
 
-    // Queued items
-    if (queuedRes.status === 'fulfilled' && queuedRes.value && queuedRes.value.data) {
-      const list = Array.isArray(queuedRes.value.data) ? queuedRes.value.data : [];
-      list.forEach(q => {
-        downloads.push({
-          id: q.id,
-          name: q.name || 'Queued Item',
-          size: q.size || 0,
-          progress: 0,
-          status: 'queued',
-          type: q.type || 'torrent',
-          speed: 0,
-          eta: null,
-          createdAt: q.created_at || null,
-          isQueued: true
+    // Queued items across torrents, usenet, and webdl
+    const queuedResponses = [
+      { res: queuedTorrentRes, defaultType: 'torrent' },
+      { res: queuedUsenetRes, defaultType: 'usenet' },
+      { res: queuedWebdlRes, defaultType: 'webdl' }
+    ];
+
+    queuedResponses.forEach(({ res, defaultType }) => {
+      if (res.status === 'fulfilled' && res.value && res.value.data) {
+        const list = Array.isArray(res.value.data) ? res.value.data : [];
+        list.forEach(q => {
+          downloads.push({
+            id: q.id,
+            name: q.name || 'Queued Item',
+            size: q.size || 0,
+            progress: 0,
+            status: 'queued',
+            type: q.type || defaultType,
+            speed: 0,
+            eta: null,
+            createdAt: q.created_at || null,
+            isQueued: true
+          });
         });
-      });
-    }
+      }
+    });
 
     return { success: true, downloads };
   } catch (error) {
@@ -1030,6 +1163,7 @@ async function controlDownload(id, type, operation = 'delete') {
       body.operation = operation;
     } else if (type === 'webdl') {
       endpoint = '/v1/api/webdl/controlwebdownload';
+      body.webdl_id = id;
       body.webdownload_id = id;
       body.operation = operation;
     } else if (type === 'usenet') {
@@ -1117,6 +1251,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (action === TorBoxConstants.MESSAGES.GET_USER_INFO) {
     getUserInfo().then(sendResponse);
+    return true;
+  }
+
+  if (action === TorBoxConstants.MESSAGES.TEST_AUTH) {
+    testAuth(message.apiKey).then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
 

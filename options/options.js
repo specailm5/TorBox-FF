@@ -119,6 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
       optDeviceAuthBtn.disabled = false;
       optDeviceAuthBtn.textContent = 'Sign In with TorBox';
 
+      if (chrome.runtime.lastError) {
+        alert(`Background connection error: ${chrome.runtime.lastError.message}`);
+        return;
+      }
+
       if (res && res.success && res.authData) {
         const data = res.authData;
         const authCode = data.code || data.user_code || data.device_code || '------';
@@ -152,7 +157,8 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }, intervalMs);
       } else {
-        alert("Failed to initiate device authentication.");
+        const errMsg = (res && (res.detail || res.error)) || "Failed to initiate device authentication. Please check network connection.";
+        alert(typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg);
       }
     });
   });
@@ -205,11 +211,22 @@ document.addEventListener('DOMContentLoaded', () => {
       testKeyBtn.textContent = 'Testing...';
     }
 
-    try {
-      const res = await fetch('https://api.torbox.app/v1/api/user/me?settings=true', {
-        headers: { 'Authorization': `Bearer ${key}` }
-      });
-      const data = await res.json();
+    chrome.runtime.sendMessage({
+      action: TorBoxConstants.MESSAGES.TEST_AUTH,
+      apiKey: key
+    }, (data) => {
+      if (showFeedback) {
+        testKeyBtn.disabled = false;
+        testKeyBtn.textContent = 'Test Connection';
+      }
+
+      if (chrome.runtime.lastError) {
+        accountOverviewCard.style.display = 'none';
+        if (showFeedback) {
+          showStatus(apiStatusMsg, `Connection error: ${chrome.runtime.lastError.message}`, false);
+        }
+        return;
+      }
 
       if (data && data.success && data.data) {
         const u = data.data;
@@ -236,20 +253,11 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         accountOverviewCard.style.display = 'none';
         if (showFeedback) {
-          showStatus(apiStatusMsg, `Connection failed: ${data.detail || data.error || 'Invalid key'}`, false);
+          const errMsg = (data && (data.detail || data.error || data.message)) || 'Invalid key';
+          showStatus(apiStatusMsg, `Connection failed: ${typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg}`, false);
         }
       }
-    } catch (err) {
-      accountOverviewCard.style.display = 'none';
-      if (showFeedback) {
-        showStatus(apiStatusMsg, `Connection error: ${err.message}`, false);
-      }
-    } finally {
-      if (showFeedback) {
-        testKeyBtn.disabled = false;
-        testKeyBtn.textContent = 'Test Connection';
-      }
-    }
+    });
   }
 
   // 7. Remove Key
