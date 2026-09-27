@@ -383,6 +383,7 @@ body {
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .chip:hover {
@@ -394,6 +395,22 @@ body {
   background: rgba(59, 130, 246, 0.15);
   border-color: var(--sapphire);
   color: var(--sapphire);
+}
+
+.chip.site-exclude-btn {
+  padding: 6px 9px;
+  font-size: 10px;
+}
+
+.chip.site-exclude-btn.excluded {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--ruby);
+  color: var(--ruby);
+}
+
+.chip:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .icon-btn {

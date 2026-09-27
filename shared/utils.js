@@ -94,6 +94,44 @@ const TorBoxUtils = {
   },
 
   /**
+   * Checks if a hostname is covered by the user's excluded domain rules (subdomains included).
+   */
+  isDomainExcluded(hostname, excludedDomains) {
+    if (!hostname || !Array.isArray(excludedDomains)) return false;
+    const host = this.normalizeDomain(hostname);
+    if (!host) return false;
+
+    return excludedDomains.some((domain) => {
+      const d = this.normalizeDomain(domain);
+      if (!d) return false;
+      return host === d || host.endsWith('.' + d);
+    });
+  },
+
+  /**
+   * Normalizes any URL, hostname, or domain input into a bare lowercase hostname.
+   */
+  normalizeDomain(input) {
+    if (!input || typeof input !== 'string') return '';
+    let value = input.trim().toLowerCase();
+    if (!value) return '';
+
+    // Strip scheme, credentials, port, path, query, and hash if a URL was passed
+    try {
+      if (value.includes('://')) value = new URL(value).hostname;
+    } catch (e) {
+      value = value.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split('/')[0];
+    }
+    value = value.split('/')[0].split('?')[0].split('#')[0].split('@').pop();
+
+    // Drop the port and any surrounding brackets/IPv6 punctuation
+    if (!value.startsWith('[')) value = value.split(':')[0];
+    value = value.replace(/^\.+|\.+$/g, '');
+
+    return value;
+  },
+
+  /**
    * Checks if a given hostname matches any supported hoster domain (handles subdomains).
    */
   isSupportedHostname(hostname, hosterSet) {

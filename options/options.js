@@ -286,12 +286,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 9. Save Domain Rules
   saveRulesBtn.addEventListener('click', () => {
-    const lines = excludedDomainsTextarea.value
-      .split('\n')
-      .map(l => l.trim().toLowerCase())
-      .filter(Boolean);
+    const seen = new Set();
+    const lines = [];
+
+    // Accept newline/comma separated input, full URLs, and "*.example.com" wildcards.
+    excludedDomainsTextarea.value
+      .split(/[\n,]+/)
+      .forEach((raw) => {
+        const domain = TorBoxUtils.normalizeDomain(raw).replace(/^\*\./, '');
+        if (!domain || domain.includes('*')) return;
+        if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) return;
+        if (seen.has(domain)) return;
+        seen.add(domain);
+        lines.push(domain);
+      });
 
     chrome.storage.local.set({ customExcludedDomains: lines }, () => {
+      excludedDomainsTextarea.value = lines.join('\n');
       showStatus(rulesStatusMsg, `Saved ${lines.length} domain exclusion rule(s)`, true);
     });
   });

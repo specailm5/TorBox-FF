@@ -63,7 +63,9 @@ if (typeof TorBoxConstants === 'undefined') {
       START_DEVICE_AUTH: "START_DEVICE_AUTH",
       CHECK_DEVICE_AUTH_TOKEN: "CHECK_DEVICE_AUTH_TOKEN",
       SEND_TO_CLOUD: "SEND_TO_CLOUD",
-      GET_CLOUD_INTEGRATIONS: "GET_CLOUD_INTEGRATIONS"
+      GET_CLOUD_INTEGRATIONS: "GET_CLOUD_INTEGRATIONS",
+      EXCLUDE_SITE: "EXCLUDE_SITE",
+      INCLUDE_SITE: "INCLUDE_SITE"
     },
     PLAN_TIERS: {
       0: { name: "Free", badge: "FREE", color: "#94a3b8" },
@@ -1349,9 +1351,143 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 /**
+ * Dynamic Content Script Registration
+ *
+ * The scanner is registered at runtime (instead of statically via the manifest) so that
+ * domains on the user's exclusion list are never injected into the page at all. The
+ * registration is kept in sync with `customExcludedDomains` whenever it changes.
+ */
+const TORBOX_CONTENT_SCRIPT_ID = 'torbox-scanner-content';
+const TORBOX_CONTENT_SCRIPT_FILES = [
+  'shared/constants.js',
+  'shared/utils.js',
+  'lib/md5.js',
+  'content/ui.js',
+  'content/scanner.js'
+];
+
+// Domains TorBox never needs to run on.
+const TORBOX_ALWAYS_EXCLUDED_MATCHES = [
+  '*://*.torbox.app/*',
+  '*://*.google.com/search*',
+  '*://*.google.com/imghp*'
+];
+
+function buildExcludeMatchPatterns(domains) {
+  const patterns = TORBOX_ALWAYS_EXCLUDED_MATCHES.slice();
+  const seen = new Set(patterns);
+
+  (Array.isArray(domains) ? domains : []).forEach((entry) => {
+    let domain = '';
+    if (typeof TorBoxUtils !== 'undefined' && typeof TorBoxUtils.normalizeDomain === 'function') {
+      domain = TorBoxUtils.normalizeDomain(entry);
+    } else if (typeof entry === 'string') {
+      domain = entry.trim().toLowerCase();
+    }
+
+    // Allow a leading wildcard ("*.example.com") to mean "example.com and subdomains".
+    domain = domain.replace(/^\*\./, '');
+    if (!domain || domain.includes('*')) return;
+    // Only accept plain hostnames so we never hand a malformed match pattern to the browser.
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) return;
+
+    for (const pattern of [`*://*.${domain}/*`, `*://${domain}/*`]) {
+      if (!seen.has(pattern)) {
+        seen.add(pattern);
+        patterns.push(pattern);
+      }
+    }
+  });
+
+  return patterns;
+}
+
+function sameMatchPatterns(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const setB = new Set(b);
+  return a.every((pattern) => setB.has(pattern));
+}
+
+function syncContentScriptRegistration() {
+  if (!chrome.scripting || typeof chrome.scripting.registerContentScripts !== 'function') {
+    return;
+  }
+
+  chrome.storage.local.get(['customExcludedDomains'], (stored) => {
+    if (chrome.runtime.lastError) return;
+
+    const excludeMatches = buildExcludeMatchPatterns(stored && stored.customExcludedDomains);
+    const definition = {
+      id: TORBOX_CONTENT_SCRIPT_ID,
+      matches: ['<all_urls>'],
+      excludeMatches,
+      css: ['content/content.css'],
+      js: TORBOX_CONTENT_SCRIPT_FILES,
+      runAt: 'document_idle',
+      persistAcrossSessions: true
+    };
+
+    const applyRegistration = () => {
+      const register = () => {
+        chrome.scripting.registerContentScripts([definition], () => {
+          if (chrome.runtime.lastError) {
+            console.warn('TorBox: content script registration failed:', chrome.runtime.lastError.message);
+          }
+        });
+      };
+
+      if (typeof chrome.scripting.unregisterContentScripts === 'function') {
+        chrome.scripting.unregisterContentScripts({ ids: [TORBOX_CONTENT_SCRIPT_ID] }, () => {
+          // Expected to fail when nothing is registered yet.
+          void chrome.runtime.lastError;
+          register();
+        });
+      } else {
+        register();
+      }
+    };
+
+    if (typeof chrome.scripting.getRegisteredContentScripts !== 'function') {
+      applyRegistration();
+      return;
+    }
+
+    chrome.scripting.getRegisteredContentScripts({ ids: [TORBOX_CONTENT_SCRIPT_ID] }, (scripts) => {
+      if (chrome.runtime.lastError) {
+        applyRegistration();
+        return;
+      }
+      const existing = scripts && scripts[0];
+      if (existing &&
+          sameMatchPatterns(existing.matches, definition.matches) &&
+          sameMatchPatterns(existing.excludeMatches || [], excludeMatches)) {
+        return; // Already up to date.
+      }
+      applyRegistration();
+    });
+  });
+}
+
+// Restore the dynamic registration on every service worker start (covers extension reloads).
+syncContentScriptRegistration();
+
+// Re-register whenever the exclusion list changes (options page or popup toggle).
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.customExcludedDomains) {
+    syncContentScriptRegistration();
+  }
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  syncContentScriptRegistration();
+});
+
+/**
  * Context Menus Setup
  */
 chrome.runtime.onInstalled.addListener(() => {
+  syncContentScriptRegistration();
+
   chrome.contextMenus.create({
     id: "torbox-context-root",
     title: "TorBox",

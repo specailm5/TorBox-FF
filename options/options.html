@@ -285,7 +285,7 @@
           <div class="form-group">
             <label for="excludedDomainsTextarea">Excluded Domains (one per line)</label>
             <textarea id="excludedDomainsTextarea" rows="6" class="textarea-box" placeholder="example.com&#10;internal.company.com"></textarea>
-            <span class="help-text">Subdomains are automatically matched (e.g. adding <code>example.com</code> also disables scanning on <code>sub.example.com</code>).</span>
+            <span class="help-text">Excluded sites are skipped entirely — TorBox does not inject or scan them. Subdomains match automatically (adding <code>example.com</code> also covers <code>sub.example.com</code>), and <code>*.example.com</code> or full URLs are accepted.</span>
           </div>
 
           <div class="actions-row">

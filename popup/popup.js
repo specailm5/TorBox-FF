@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const countTotalEl = document.getElementById('countTotal');
   const linkSearchInput = document.getElementById('linkSearchInput');
   const rescanPageBtn = document.getElementById('rescanPageBtn');
+  const excludeSiteBtn = document.getElementById('excludeSiteBtn');
   const scannerChips = document.querySelectorAll('.filter-chips .chip');
   const pageLinksList = document.getElementById('pageLinksList');
 
@@ -79,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchDownloads();
       } else if (tabId === 'scanner') {
         fetchPageLinks();
+        refreshSiteExclusion();
       }
     });
   });
@@ -196,8 +198,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const activeTab = tabs[0];
       chrome.tabs.sendMessage(activeTab.id, { action: TorBoxConstants.MESSAGES.GET_PAGE_LINKS }, (res) => {
         if (chrome.runtime.lastError || !res || !res.links) {
-          renderScannerEmpty("No downloadable links detected on this page, or page scanning is restricted.");
-          updateStatsCounters(0, 0, 0);
+          // On excluded sites the content script is never injected, so report the
+          // exclusion accurately instead of showing a generic "no links" message.
+          const domain = TorBoxUtils.normalizeDomain(activeTab.url || '');
+          chrome.storage.local.get(['customExcludedDomains'], (stored) => {
+            if (TorBoxUtils.isDomainExcluded(domain, stored.customExcludedDomains)) {
+              pageLinksCache = [];
+              renderScannerExcluded();
+            } else {
+              updateStatsCounters(0, 0, 0);
+              renderScannerEmpty("No downloadable links detected on this page, or page scanning is restricted.");
+            }
+          });
+          return;
+        }
+
+        if (res.excluded) {
+          pageLinksCache = [];
+          renderScannerExcluded();
           return;
         }
 
@@ -205,6 +223,22 @@ document.addEventListener('DOMContentLoaded', () => {
         renderScannerList();
       });
     });
+  }
+
+  function renderScannerExcluded() {
+    updateStatsCounters(0, 0, 0);
+    pageLinksList.innerHTML = `
+      <div class="empty-state">
+        <p>🚫 This site is excluded — TorBox scanning is disabled here.</p>
+        <button id="includeSiteNowBtn" class="btn btn-emerald" style="margin-top:8px; padding:6px 12px; font-size:11px;">
+          ✅ Re-enable on this site
+        </button>
+      </div>
+    `;
+    const btn = document.getElementById('includeSiteNowBtn');
+    if (btn) {
+      btn.addEventListener('click', () => toggleSiteExclusion(false));
+    }
   }
 
   function updateStatsCounters(cached, notCached, total) {
@@ -243,6 +277,133 @@ document.addEventListener('DOMContentLoaded', () => {
       }, () => {
         setTimeout(fetchPageLinks, 600);
       });
+    });
+  }
+
+  // 6b. Exclude This Site Controller
+  function getActiveTabSite() {
+    return new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = (tabs && tabs.length > 0) ? tabs[0] : null;
+        const domain = tab ? TorBoxUtils.normalizeDomain(tab.url || '') : '';
+        resolve({ tab, domain });
+      });
+    });
+  }
+
+  // Inject the scanner into a tab on demand. Used when the user re-enables a site
+  // that is currently excluded (and therefore has no content script injected).
+  function injectScannerIntoTab(tabId, callback) {
+    if (tabId === undefined || tabId === null || !chrome.scripting) {
+      if (callback) callback();
+      return;
+    }
+
+    chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => Boolean(window.torBoxScanner)
+    }, (results) => {
+      const alreadyInjected = !chrome.runtime.lastError && results && results[0] && results[0].result;
+      if (alreadyInjected) {
+        if (callback) callback();
+        return;
+      }
+
+      chrome.scripting.executeScript({
+        target: { tabId },
+        files: [
+          'shared/constants.js',
+          'shared/utils.js',
+          'lib/md5.js',
+          'content/ui.js',
+          'content/scanner.js'
+        ]
+      }, () => {
+        void chrome.runtime.lastError;
+        chrome.scripting.insertCSS({
+          target: { tabId },
+          files: ['content/content.css']
+        }, () => {
+          void chrome.runtime.lastError;
+          if (callback) callback();
+        });
+      });
+    });
+  }
+
+  async function refreshSiteExclusion() {
+    if (!excludeSiteBtn) return;
+    const { domain } = await getActiveTabSite();
+
+    if (!domain) {
+      excludeSiteBtn.disabled = true;
+      excludeSiteBtn.textContent = '🚫 Exclude this site';
+      excludeSiteBtn.classList.remove('excluded');
+      excludeSiteBtn.title = 'This page cannot be excluded';
+      return;
+    }
+
+    excludeSiteBtn.disabled = false;
+    const stored = await chrome.storage.local.get(['customExcludedDomains']);
+    const isExcluded = TorBoxUtils.isDomainExcluded(domain, stored.customExcludedDomains);
+
+    excludeSiteBtn.classList.toggle('excluded', isExcluded);
+    excludeSiteBtn.textContent = isExcluded ? '✅ Re-enable on this site' : '🚫 Exclude this site';
+    excludeSiteBtn.title = isExcluded
+      ? `TorBox is disabled on ${domain} — click to re-enable`
+      : `Stop scanning and hide the TorBox dock on ${domain}`;
+  }
+
+  async function toggleSiteExclusion(exclude) {
+    if (!excludeSiteBtn) return;
+    const { tab, domain } = await getActiveTabSite();
+    if (!domain) return;
+
+    excludeSiteBtn.disabled = true;
+    excludeSiteBtn.textContent = '⏳ Saving...';
+
+    const stored = await chrome.storage.local.get(['customExcludedDomains']);
+    const current = Array.isArray(stored.customExcludedDomains) ? stored.customExcludedDomains : [];
+
+    let next;
+    if (exclude) {
+      next = current.some(d => TorBoxUtils.normalizeDomain(d) === domain) ? current : [...current, domain];
+    } else {
+      next = current.filter(d => TorBoxUtils.normalizeDomain(d) !== domain);
+    }
+
+    await chrome.storage.local.set({ customExcludedDomains: next });
+
+    // Tell the live content script immediately; its own storage listener is the
+    // fallback for tabs that cannot receive messages.
+    if (tab && tab.id !== undefined) {
+      try {
+        chrome.tabs.sendMessage(tab.id, {
+          action: exclude ? TorBoxConstants.MESSAGES.EXCLUDE_SITE : TorBoxConstants.MESSAGES.INCLUDE_SITE
+        });
+      } catch (e) {}
+    }
+
+    await refreshSiteExclusion();
+
+    if (exclude) {
+      pageLinksCache = [];
+      renderScannerExcluded();
+    } else if (tab && tab.id !== undefined) {
+      // The site was excluded, so the content script is not present yet — inject it
+      // now instead of asking the user to reload the page.
+      injectScannerIntoTab(tab.id, () => setTimeout(fetchPageLinks, 600));
+    } else {
+      setTimeout(fetchPageLinks, 600);
+    }
+  }
+
+  if (excludeSiteBtn) {
+    excludeSiteBtn.addEventListener('click', async () => {
+      const stored = await chrome.storage.local.get(['customExcludedDomains']);
+      const { domain } = await getActiveTabSite();
+      const isExcluded = TorBoxUtils.isDomainExcluded(domain, stored.customExcludedDomains);
+      toggleSiteExclusion(!isExcluded);
     });
   }
 
@@ -825,6 +986,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial Boot
   loadUserInfo();
   fetchPageLinks();
+  refreshSiteExclusion();
+
+  // Keep the exclude button in sync when rules change elsewhere (options page)
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.customExcludedDomains) {
+      refreshSiteExclusion();
+    }
+  });
 
   // Polling loop for active tab
   pollInterval = setInterval(() => {
@@ -832,6 +1001,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fetchDownloads();
     } else if (currentTab === 'scanner') {
       fetchPageLinks();
+      refreshSiteExclusion();
     }
   }, 4000);
 });

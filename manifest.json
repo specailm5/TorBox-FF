@@ -37,25 +37,6 @@
       "background/service-worker.js"
     ]
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "exclude_matches": [
-        "*://*.torbox.app/*",
-        "*://*.google.com/search*",
-        "*://*.google.com/imghp*"
-      ],
-      "css": ["content/content.css"],
-      "js": [
-        "shared/constants.js",
-        "shared/utils.js",
-        "lib/md5.js",
-        "content/ui.js",
-        "content/scanner.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "TorBox Debrid & Cache Manager",

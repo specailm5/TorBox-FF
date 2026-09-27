@@ -12,6 +12,12 @@ class TorBoxScanner {
     this.pageLinks = new Map(); // normalizedUrl -> { url, originalUrl, text, group, state, type }
     this.settings = Object.assign({}, window.TorBoxConstants.DEFAULT_SETTINGS);
     this.isHosterSite = false;
+    this.currentHost = (window.location.hostname || '').toLowerCase();
+    this.isExcludedSite = false;
+    this.isScanning = false;
+    this.exclusionGeneration = 0;
+    this.domObserver = null;
+    this.lastHref = location.href;
 
     // Debounced check batcher
     this.processPendingChecks = window.TorBoxUtils.debounce(this._processPendingChecks.bind(this), 400);
@@ -19,16 +25,179 @@ class TorBoxScanner {
     this.debouncedUpdateBadge = window.TorBoxUtils.debounce(this._updateBadge.bind(this), 150);
 
     this._setupMessageListener();
+    this._setupStorageListener();
   }
 
   _setupMessageListener() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === window.TorBoxConstants.MESSAGES.GET_PAGE_LINKS) {
         const linksList = Array.from(this.pageLinks.values());
-        sendResponse({ links: linksList });
+        sendResponse({ links: linksList, excluded: this.isExcludedSite });
+        return true;
+      }
+
+      if (message.action === window.TorBoxConstants.MESSAGES.EXCLUDE_SITE) {
+        this.setSiteExcluded(true);
+        sendResponse({ success: true, excluded: true });
+        return true;
+      }
+
+      if (message.action === window.TorBoxConstants.MESSAGES.INCLUDE_SITE) {
+        this.setSiteExcluded(false);
+        sendResponse({ success: true, excluded: false });
         return true;
       }
     });
+  }
+
+  _setupStorageListener() {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local' || !changes.customExcludedDomains) return;
+      const next = changes.customExcludedDomains.newValue;
+      this.setSiteExcluded(window.TorBoxUtils.isDomainExcluded(this.currentHost, next));
+    });
+  }
+
+  /**
+   * Enables or disables all in-page activity for the current site.
+   * Called both by user action from the popup and by storage changes.
+   */
+  setSiteExcluded(excluded) {
+    // Bumped on every decision so an in-flight init() cannot apply a stale read
+    this.exclusionGeneration += 1;
+
+    if (excluded) {
+      this.isExcludedSite = true;
+      this.stopScanning();
+      this.pageLinks.clear();
+      this.pendingChecks = [];
+      this._setBadgeCount(0);
+      if (window.torBoxUI) {
+        window.torBoxUI.removeFloatingDock();
+      }
+    } else {
+      this.isExcludedSite = false;
+      this.init();
+    }
+  }
+
+  _setBadgeCount(count) {
+    try {
+      chrome.runtime.sendMessage({
+        action: window.TorBoxConstants.MESSAGES.UPDATE_BADGE,
+        count: count
+      });
+    } catch (e) {}
+  }
+
+  async init() {
+    if (this.isExcludedSite) return;
+
+    const generation = this.exclusionGeneration;
+
+    // 1. Load user settings
+    const stored = await chrome.storage.local.get([
+      'autoScan',
+      'scanTextLinks',
+      'showFloatingDock',
+      'customExcludedDomains'
+    ]);
+
+    // A newer exclude/include decision landed while we were reading storage
+    if (this.exclusionGeneration !== generation) return;
+    if (this.isExcludedSite) return;
+
+    if (stored.autoScan !== undefined) this.settings.autoScan = stored.autoScan;
+    if (stored.scanTextLinks !== undefined) this.settings.scanTextLinks = stored.scanTextLinks;
+    if (stored.showFloatingDock !== undefined) this.settings.showFloatingDock = stored.showFloatingDock;
+
+    // Check custom domain exclusion
+    const currentHost = this.currentHost;
+    if (window.TorBoxUtils.isDomainExcluded(currentHost, stored.customExcludedDomains)) {
+      this.isExcludedSite = true;
+      return;
+    }
+
+    if (!this.settings.autoScan) return;
+
+    // 2. Fetch supported hosters
+    chrome.runtime.sendMessage({ action: window.TorBoxConstants.MESSAGES.GET_HOSTERS }, (response) => {
+      if (this.exclusionGeneration !== generation) return;
+      if (this.isExcludedSite) return;
+
+      if (response && response.hosters && response.hosters.length > 0) {
+        this.hosters = response.hosters;
+        this.streams = response.streams || [];
+      } else {
+        this.hosters = window.TorBoxConstants.DEFAULT_HOSTERS || [];
+        this.streams = window.TorBoxConstants.DEFAULT_STREAMS || [];
+      }
+
+      this.isHosterSite = this.hosters.some(h => {
+        if (!h) return false;
+        const lower = h.toLowerCase();
+        return currentHost === lower || currentHost.endsWith('.' + lower);
+      });
+
+      this.startScanning();
+    });
+  }
+
+  startScanning() {
+    if (this.isExcludedSite) return;
+
+    this._scanFullDOM();
+    this.checkCurrentPage();
+
+    this.lastHref = location.href;
+
+    // Setup MutationObserver for dynamic websites / SPAs (once per page)
+    if (this.domObserver) return;
+    this.isScanning = true;
+
+    this.domObserver = new MutationObserver((mutations) => {
+      if (location.href !== this.lastHref) {
+        this.lastHref = location.href;
+        this.checkCurrentPage();
+      }
+
+      let hasNewNodes = false;
+      for (const m of mutations) {
+        if (m.type === 'childList' && m.addedNodes.length > 0) {
+          for (const node of m.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              if (node.id === 'torbox-floating-dock') {
+                continue;
+              }
+              hasNewNodes = true;
+              break;
+            }
+          }
+        }
+        if (hasNewNodes) break;
+      }
+
+      if (hasNewNodes) {
+        this.debouncedScan();
+      }
+    });
+
+    this.domObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  /**
+   * Tears down every active in-page listener so an excluded site stays untouched.
+   */
+  stopScanning() {
+    this.isScanning = false;
+
+    if (this.domObserver) {
+      this.domObserver.disconnect();
+      this.domObserver = null;
+    }
   }
 
   _getNearestHeading(node) {
@@ -100,88 +269,6 @@ class TorBoxScanner {
 
     const finalTitle = cleanTitle(titleStr);
     return isValidTitle(finalTitle) ? finalTitle : 'Page Links';
-  }
-
-  async init() {
-    // 1. Load user settings
-    const stored = await chrome.storage.local.get([
-      'autoScan',
-      'scanTextLinks',
-      'showFloatingDock',
-      'customExcludedDomains'
-    ]);
-
-    if (stored.autoScan !== undefined) this.settings.autoScan = stored.autoScan;
-    if (stored.scanTextLinks !== undefined) this.settings.scanTextLinks = stored.scanTextLinks;
-    if (stored.showFloatingDock !== undefined) this.settings.showFloatingDock = stored.showFloatingDock;
-
-    // Check custom domain exclusion
-    const currentHost = window.location.hostname.toLowerCase();
-    const excludedDomains = stored.customExcludedDomains || [];
-    if (excludedDomains.some(d => currentHost === d || currentHost.endsWith('.' + d))) {
-      return;
-    }
-
-    if (!this.settings.autoScan) return;
-
-    // 2. Fetch supported hosters
-    chrome.runtime.sendMessage({ action: window.TorBoxConstants.MESSAGES.GET_HOSTERS }, (response) => {
-      if (response && response.hosters && response.hosters.length > 0) {
-        this.hosters = response.hosters;
-        this.streams = response.streams || [];
-      } else {
-        this.hosters = window.TorBoxConstants.DEFAULT_HOSTERS || [];
-        this.streams = window.TorBoxConstants.DEFAULT_STREAMS || [];
-      }
-
-      this.isHosterSite = this.hosters.some(h => {
-        if (!h) return false;
-        const lower = h.toLowerCase();
-        return currentHost === lower || currentHost.endsWith('.' + lower);
-      });
-
-      this.startScanning();
-    });
-  }
-
-  startScanning() {
-    this._scanFullDOM();
-    this.checkCurrentPage();
-
-    let lastHref = location.href;
-
-    // Setup MutationObserver for dynamic websites / SPAs
-    const observer = new MutationObserver((mutations) => {
-      if (location.href !== lastHref) {
-        lastHref = location.href;
-        this.checkCurrentPage();
-      }
-
-      let hasNewNodes = false;
-      for (const m of mutations) {
-        if (m.type === 'childList' && m.addedNodes.length > 0) {
-          for (const node of m.addedNodes) {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              if (node.id === 'torbox-floating-dock') {
-                continue;
-              }
-              hasNewNodes = true;
-              break;
-            }
-          }
-        }
-        if (hasNewNodes) break;
-      }
-
-      if (hasNewNodes) {
-        this.debouncedScan();
-      }
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
   }
 
   _scanFullDOM() {
