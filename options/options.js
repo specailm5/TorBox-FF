@@ -13,6 +13,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const optAuthCodeContainer = document.getElementById('optAuthCodeContainer');
   const optAuthCodeDisplay = document.getElementById('optAuthCodeDisplay');
   const optAuthStatusText = document.getElementById('optAuthStatusText');
+  const optCopyAuthCodeBtn = document.getElementById('optCopyAuthCodeBtn');
+  const optAuthVerifyLink = document.getElementById('optAuthVerifyLink');
+  const optSigninStatus = document.getElementById('optSigninStatus');
+  const optionsVersionTag = document.getElementById('optionsVersionTag');
+
+  try {
+    optionsVersionTag.textContent = `v${chrome.runtime.getManifest().version}`;
+  } catch (e) {
+    optionsVersionTag.textContent = 'Debrid manager';
+  }
 
   // Account Elements
   const apiKeyInput = document.getElementById('apiKey');
@@ -57,10 +67,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // 1. Navigation Controller
   navItems.forEach(item => {
     item.addEventListener('click', () => {
-      navItems.forEach(n => n.classList.remove('active'));
+      navItems.forEach(n => {
+        n.classList.remove('active');
+        n.removeAttribute('aria-current');
+      });
       settingsSections.forEach(s => s.classList.remove('active'));
 
       item.classList.add('active');
+      item.setAttribute('aria-current', 'page');
       const targetSection = item.dataset.section;
       document.getElementById(`section-${targetSection}`).classList.add('active');
     });
@@ -99,67 +113,117 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 3. 1-Click Device Code Login
-  optAuthCodeDisplay.style.cursor = 'pointer';
-  optAuthCodeDisplay.title = 'Click to copy code';
-  optAuthCodeDisplay.addEventListener('click', () => {
-    const code = optAuthCodeDisplay.textContent.trim();
-    if (code && code !== '------') {
-      navigator.clipboard.writeText(code).then(() => {
-        optAuthStatusText.textContent = '📋 Code copied to clipboard!';
-      });
+  // 3. Device code sign-in
+  function buildVerificationUrl(data, code) {
+    if (data.verification_url_complete) return data.verification_url_complete;
+    const base = data.verification_url || data.friendly_verification_url || 'https://torbox.app/oauth/device';
+    try {
+      const url = new URL(base);
+      if (code) url.searchParams.set('code', code);
+      return url.toString();
+    } catch (e) {
+      return base;
     }
+  }
+
+  async function copyText(text) {
+    if (!text) return false;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      try {
+        const field = document.createElement('textarea');
+        field.value = text;
+        field.setAttribute('readonly', '');
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+        field.select();
+        const copied = document.execCommand('copy');
+        field.remove();
+        return copied;
+      } catch (fallbackError) {
+        return false;
+      }
+    }
+  }
+
+  function setAuthStatus(text, state) {
+    optAuthStatusText.textContent = text;
+    optAuthStatusText.className = 'auth-status' + (state ? ` is-${state}` : '');
+  }
+
+  function setSigninStatus(text, state) {
+    optSigninStatus.textContent = text || '';
+    optSigninStatus.className = 'auth-status' + (state ? ` is-${state}` : '');
+    optSigninStatus.hidden = !text;
+  }
+
+  optCopyAuthCodeBtn.addEventListener('click', async () => {
+    const code = optAuthCodeDisplay.textContent.trim();
+    if (!code || code === '------') return;
+    const copied = await copyText(code);
+    setAuthStatus(copied ? 'Code copied to clipboard.' : 'Could not copy the code. Select it and copy manually.', copied ? 'success' : 'error');
   });
 
   optDeviceAuthBtn.addEventListener('click', () => {
     optDeviceAuthBtn.disabled = true;
-    optDeviceAuthBtn.textContent = 'Connecting...';
+    optDeviceAuthBtn.textContent = 'Connecting…';
+    setSigninStatus('');
 
-    chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.START_DEVICE_AUTH }, (res) => {
+    chrome.runtime.sendMessage({ action: TorBoxConstants.MESSAGES.START_DEVICE_AUTH }, async (res) => {
       optDeviceAuthBtn.disabled = false;
-      optDeviceAuthBtn.textContent = 'Sign In with TorBox';
+      optDeviceAuthBtn.textContent = 'Sign in';
 
       if (chrome.runtime.lastError) {
-        alert(`Background connection error: ${chrome.runtime.lastError.message}`);
+        setSigninStatus(`Could not reach the extension background: ${chrome.runtime.lastError.message}`, 'error');
         return;
       }
 
-      if (res && res.success && res.authData) {
-        const data = res.authData;
-        const authCode = data.code || data.user_code || data.device_code || '------';
-        optAuthCodeDisplay.textContent = authCode;
-        optAuthStatusText.textContent = '⏳ Waiting for browser confirmation... (Code copied to clipboard)';
-        optAuthCodeContainer.style.display = 'block';
-
-        try {
-          navigator.clipboard.writeText(authCode);
-        } catch (e) {}
-
-        window.open(data.verification_url || data.friendly_verification_url || 'https://torbox.app/oauth/device', '_blank');
-
-        if (deviceAuthPollTimer) clearInterval(deviceAuthPollTimer);
-        const intervalMs = (data.interval || 5) * 1000;
-
-        deviceAuthPollTimer = setInterval(() => {
-          chrome.runtime.sendMessage({
-            action: TorBoxConstants.MESSAGES.CHECK_DEVICE_AUTH_TOKEN,
-            deviceCode: data.device_code
-          }, (tokenRes) => {
-            if (tokenRes && tokenRes.success && tokenRes.token) {
-              clearInterval(deviceAuthPollTimer);
-              optAuthStatusText.textContent = '🟢 Connected successfully!';
-              apiKeyInput.value = tokenRes.token;
-              testConnection(tokenRes.token, true);
-              setTimeout(() => {
-                optAuthCodeContainer.style.display = 'none';
-              }, 3000);
-            }
-          });
-        }, intervalMs);
-      } else {
-        const errMsg = (res && (res.detail || res.error)) || "Failed to initiate device authentication. Please check network connection.";
-        alert(typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg);
+      if (!res || !res.success || !res.authData) {
+        const errMsg = (res && (res.detail || res.error)) || 'Could not start sign-in. Check your connection and try again.';
+        setSigninStatus(typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg, 'error');
+        return;
       }
+
+      const data = res.authData;
+      const authCode = data.code || data.user_code || data.device_code || '------';
+      const verifyUrl = buildVerificationUrl(data, authCode);
+
+      optAuthCodeDisplay.textContent = authCode;
+      optAuthVerifyLink.href = verifyUrl;
+      optAuthCodeContainer.hidden = false;
+      setAuthStatus('Waiting for approval…');
+
+      // Copy before opening the tab so the clipboard write is not interrupted.
+      const copied = await copyText(authCode);
+      setAuthStatus(
+        copied ? 'Code copied. Finish signing in on the TorBox page.' : 'Copy the code below if the TorBox page does not fill it in.'
+      );
+
+      chrome.tabs.create({ url: verifyUrl });
+
+      if (deviceAuthPollTimer) clearInterval(deviceAuthPollTimer);
+      const intervalMs = (data.interval || 5) * 1000;
+
+      deviceAuthPollTimer = setInterval(() => {
+        chrome.runtime.sendMessage({
+          action: TorBoxConstants.MESSAGES.CHECK_DEVICE_AUTH_TOKEN,
+          deviceCode: data.device_code
+        }, (tokenRes) => {
+          if (tokenRes && tokenRes.success && tokenRes.token) {
+            clearInterval(deviceAuthPollTimer);
+            deviceAuthPollTimer = null;
+            setAuthStatus('Connected.', 'success');
+            apiKeyInput.value = tokenRes.token;
+            testConnection(tokenRes.token, true);
+            setTimeout(() => {
+              optAuthCodeContainer.hidden = true;
+            }, 3000);
+          }
+        });
+      }, intervalMs);
     });
   });
 
@@ -167,11 +231,12 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.torboxApiKey && changes.torboxApiKey.newValue) {
       if (deviceAuthPollTimer) clearInterval(deviceAuthPollTimer);
-      optAuthStatusText.textContent = '🟢 Connected successfully!';
+      deviceAuthPollTimer = null;
+      setAuthStatus('Connected.', 'success');
       apiKeyInput.value = changes.torboxApiKey.newValue;
       testConnection(changes.torboxApiKey.newValue, true);
       setTimeout(() => {
-        optAuthCodeContainer.style.display = 'none';
+        optAuthCodeContainer.hidden = true;
       }, 2000);
     }
   });
@@ -185,12 +250,12 @@ document.addEventListener('DOMContentLoaded', () => {
   saveKeyBtn.addEventListener('click', () => {
     const key = apiKeyInput.value.trim();
     if (!key) {
-      showStatus(apiStatusMsg, 'Please enter a valid API key', false);
+      showStatus(apiStatusMsg, 'Enter a valid API key.', false);
       return;
     }
 
     chrome.storage.local.set({ torboxApiKey: key }, () => {
-      showStatus(apiStatusMsg, 'API Key saved successfully', true);
+      showStatus(apiStatusMsg, 'API key saved.', true);
       testConnection(key, true);
     });
   });
@@ -199,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
   testKeyBtn.addEventListener('click', () => {
     const key = apiKeyInput.value.trim();
     if (!key) {
-      showStatus(apiStatusMsg, 'Please enter an API key first', false);
+      showStatus(apiStatusMsg, 'Enter an API key first.', false);
       return;
     }
     testConnection(key, true);
@@ -208,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function testConnection(key, showFeedback = true) {
     if (showFeedback) {
       testKeyBtn.disabled = true;
-      testKeyBtn.textContent = 'Testing...';
+      testKeyBtn.textContent = 'Testing…';
     }
 
     chrome.runtime.sendMessage({
@@ -217,11 +282,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }, (data) => {
       if (showFeedback) {
         testKeyBtn.disabled = false;
-        testKeyBtn.textContent = 'Test Connection';
+        testKeyBtn.textContent = 'Test connection';
       }
 
       if (chrome.runtime.lastError) {
-        accountOverviewCard.style.display = 'none';
+        accountOverviewCard.hidden = true;
         if (showFeedback) {
           showStatus(apiStatusMsg, `Connection error: ${chrome.runtime.lastError.message}`, false);
         }
@@ -230,10 +295,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data && data.success && data.data) {
         const u = data.data;
-        const planTier = TorBoxConstants.PLAN_TIERS[u.plan] || { name: 'Free', badge: 'FREE', color: '#94a3b8' };
+        const planTier = TorBoxConstants.PLAN_TIERS[u.plan] || { name: 'Free', badge: 'FREE', color: '#9ca3af' };
 
         overviewTierBadge.textContent = planTier.badge;
-        overviewTierBadge.style.background = planTier.color;
         overviewEmail.textContent = u.email || u.username || 'User';
 
         if (u.daily_bandwidth_limit > 0) {
@@ -245,13 +309,13 @@ document.addEventListener('DOMContentLoaded', () => {
         overviewExpires.textContent = u.plan_expiration_date ? new Date(u.plan_expiration_date).toLocaleDateString() : 'Lifetime / None';
         overviewTotalDl.textContent = TorBoxUtils.formatBytes(u.total_downloaded || 0);
 
-        accountOverviewCard.style.display = 'flex';
+        accountOverviewCard.hidden = false;
 
         if (showFeedback) {
-          showStatus(apiStatusMsg, `Connected successfully as ${u.email || u.username}! (${planTier.name} Plan)`, true);
+          showStatus(apiStatusMsg, `Connected as ${u.email || u.username} (${planTier.name} plan)`, true);
         }
       } else {
-        accountOverviewCard.style.display = 'none';
+        accountOverviewCard.hidden = true;
         if (showFeedback) {
           const errMsg = (data && (data.detail || data.error || data.message)) || 'Invalid key';
           showStatus(apiStatusMsg, `Connection failed: ${typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg}`, false);
@@ -264,8 +328,8 @@ document.addEventListener('DOMContentLoaded', () => {
   removeKeyBtn.addEventListener('click', () => {
     chrome.storage.local.remove(['torboxApiKey'], () => {
       apiKeyInput.value = '';
-      accountOverviewCard.style.display = 'none';
-      showStatus(apiStatusMsg, 'API Key disconnected', true);
+      accountOverviewCard.hidden = true;
+      showStatus(apiStatusMsg, 'API key removed.', true);
     });
   });
 
@@ -280,7 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
       skipSaveDialog: skipSaveDialogToggle.checked,
       downloadEngine: downloadEngineSelect.value
     }, () => {
-      showStatus(prefsStatusMsg, 'Scanning preferences saved successfully', true);
+      showStatus(prefsStatusMsg, 'Preferences saved.', true);
     });
   });
 
@@ -303,7 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chrome.storage.local.set({ customExcludedDomains: lines }, () => {
       excludedDomainsTextarea.value = lines.join('\n');
-      showStatus(rulesStatusMsg, `Saved ${lines.length} domain exclusion rule(s)`, true);
+      showStatus(rulesStatusMsg, `Saved ${lines.length} domain rule${lines.length === 1 ? '' : 's'}.`, true);
     });
   });
 
@@ -327,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const filtered = hostersCache.filter(item => !q || item.domain.toLowerCase().includes(q));
 
     if (filtered.length === 0) {
-      hostersTableBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-dim);">No matching hosters found.</td></tr>`;
+      hostersTableBody.innerHTML = `<tr><td colspan="3" class="table-message">No hosters match that search.</td></tr>`;
       return;
     }
 
@@ -336,7 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const isStream = item.type === 'Stream';
       html += `
         <tr>
-          <td><strong style="color:var(--text-main);">${escapeHtml(item.domain)}</strong></td>
+          <td><strong>${escapeHtml(item.domain)}</strong></td>
           <td><span class="badge-tag ${isStream ? 'stream' : 'hoster'}">${item.type}</span></td>
           <td><span class="badge-tag active">Supported</span></td>
         </tr>
@@ -351,9 +415,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function showStatus(el, text, isSuccess) {
     el.textContent = text;
     el.className = `status-box ${isSuccess ? 'success' : 'error'}`;
-    el.style.display = 'block';
-    setTimeout(() => {
-      el.style.display = 'none';
+    el.hidden = false;
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => {
+      el.hidden = true;
     }, 4000);
   }
 

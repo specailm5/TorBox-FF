@@ -1,0 +1,64 @@
+/* TorBox brand tokens, shared by the popup and options pages. */
+:root {
+  --tb-bg: #0f1117;
+  --tb-surface: #12141b;
+  --tb-raised: #1e2129;
+  --tb-input: #161920;
+
+  --tb-border: #302f2f;
+  --tb-border-strong: #454545;
+
+  --tb-text: #ffffff;
+  --tb-text-secondary: #d1d5db;
+  --tb-text-muted: #9ca3af;
+
+  --tb-accent: #04bf8a;
+  --tb-accent-hover: #03a878;
+  --tb-accent-contrast: #04120d;
+
+  --tb-danger: #ef4444;
+  --tb-danger-text: #f87171;
+
+  --tb-radius-sm: 6px;
+  --tb-radius-md: 8px;
+  --tb-radius-lg: 12px;
+
+  --tb-space-1: 4px;
+  --tb-space-2: 8px;
+  --tb-space-3: 12px;
+  --tb-space-4: 16px;
+  --tb-space-5: 24px;
+  --tb-space-6: 32px;
+
+  --tb-font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--tb-accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--tb-accent);
+  color: var(--tb-accent-contrast);
+}

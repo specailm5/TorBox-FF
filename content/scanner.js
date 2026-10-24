@@ -12,6 +12,7 @@ class TorBoxScanner {
     this.pageLinks = new Map(); // normalizedUrl -> { url, originalUrl, text, group, state, type }
     this.settings = Object.assign({}, window.TorBoxConstants.DEFAULT_SETTINGS);
     this.isHosterSite = false;
+    this.isGeneralHosterSite = false;
     this.currentHost = (window.location.hostname || '').toLowerCase();
     this.isExcludedSite = false;
     this.isScanning = false;
@@ -77,8 +78,36 @@ class TorBoxScanner {
       }
     } else {
       this.isExcludedSite = false;
+      // Excluding cleared pageLinks, so previously scanned elements must be
+      // scanned again or the dock would stay empty after re-enabling.
+      this.scannedElements = new WeakSet();
+      this.pendingChecks = [];
+      if (window.torBoxUI) window.torBoxUI.resetDockDismissal();
       this.init();
     }
+  }
+
+  /**
+   * Persists the current domain in the user's exclusion list and stops all
+   * in-page activity. Used by the dock's "Don't show on this site" action.
+   */
+  async excludeCurrentSite() {
+    const domain = window.TorBoxUtils.normalizeDomain(this.currentHost);
+
+    if (domain) {
+      try {
+        const stored = await chrome.storage.local.get(['customExcludedDomains']);
+        const current = Array.isArray(stored.customExcludedDomains) ? stored.customExcludedDomains : [];
+        const alreadyListed = current.some(d => window.TorBoxUtils.normalizeDomain(d) === domain);
+        if (!alreadyListed) {
+          await chrome.storage.local.set({ customExcludedDomains: [...current, domain] });
+        }
+      } catch (e) {
+        console.warn('TorBox: could not save site exclusion:', e);
+      }
+    }
+
+    this.setSiteExcluded(true);
   }
 
   _setBadgeCount(count) {
@@ -139,6 +168,9 @@ class TorBoxScanner {
         return currentHost === lower || currentHost.endsWith('.' + lower);
       });
 
+      this.isGeneralHosterSite = this.isHosterSite &&
+        window.TorBoxUtils.isGeneralHosterDomain(currentHost, this.hosters);
+
       this.startScanning();
     });
   }
@@ -158,6 +190,7 @@ class TorBoxScanner {
     this.domObserver = new MutationObserver((mutations) => {
       if (location.href !== this.lastHref) {
         this.lastHref = location.href;
+        if (window.torBoxUI) window.torBoxUI.resetDockDismissal();
         this.checkCurrentPage();
       }
 
@@ -272,7 +305,10 @@ class TorBoxScanner {
   }
 
   _scanFullDOM() {
-    if (!this.isHosterSite) {
+    // Dedicated file hosters are handled as a single current-page download.
+    // Hosters that mix file and non-file pages (GitHub, Drive, Dropbox) still
+    // need their links scanned, otherwise a repo page would hide release assets.
+    if (!this.isHosterSite || this.isGeneralHosterSite) {
       this.scanAnchors(document.body);
       if (this.settings.scanTextLinks) {
         this.scanTextContainers(document.body);
@@ -373,6 +409,14 @@ class TorBoxScanner {
     if (isStreamSite || this.isHosterSite) {
       const urlObj = new URL(currentUrl);
       if (urlObj.pathname === '/' && urlObj.search === '' && !urlObj.hash) {
+        return;
+      }
+
+      // Hosters that mix file and non-file pages (GitHub, Drive, Dropbox) have
+      // plenty of pages that are not downloads. Only treat the current page as
+      // a download when its URL actually points at a file/share path.
+      if (this.isHosterSite && !isStreamSite &&
+          !window.TorBoxUtils.isDownloadableHosterUrl(currentUrl, this.hosters)) {
         return;
       }
 

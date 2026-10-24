@@ -4,294 +4,268 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TorBox Extension Settings</title>
+  <link rel="stylesheet" href="../shared/theme.css">
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <div class="options-layout">
-    <!-- Sidebar Navigation -->
     <aside class="sidebar">
       <div class="brand">
-        <img src="../icons/icon48.png" alt="TorBox" width="28" height="28">
+        <img src="../icons/icon48.png" alt="" width="28" height="28">
         <div class="brand-title">
           <h1>TorBox</h1>
-          <span>Manager v2.1</span>
+          <span id="optionsVersionTag">Debrid manager</span>
         </div>
       </div>
 
-      <nav class="nav-menu">
-        <button class="nav-item active" data-section="account">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
-          <span>Account & API</span>
+      <nav class="nav-menu" aria-label="Settings sections">
+        <button class="nav-item active" type="button" data-section="account" aria-current="page">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
+          <span>Account</span>
         </button>
 
-        <button class="nav-item" data-section="scanning">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
-          <span>Scanning Preferences</span>
+        <button class="nav-item" type="button" data-section="scanning">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+          <span>Scanning</span>
         </button>
 
-        <button class="nav-item" data-section="cloud">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z"/></svg>
-          <span>Cloud Integrations</span>
+        <button class="nav-item" type="button" data-section="cloud">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l1.293 1.293a1 1 0 001.414-1.414l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13H5.5z"/></svg>
+          <span>Cloud storage</span>
         </button>
 
-        <button class="nav-item" data-section="hosters">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v2H5V6zm10 4H5v2h10v-2zm-10 4h6v2H5v-2z" clip-rule="evenodd"/></svg>
-          <span>Supported Hosters</span>
+        <button class="nav-item" type="button" data-section="hosters">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3 1h10v2H5V6zm10 4H5v2h10v-2zm-10 4h6v2H5v-2z" clip-rule="evenodd"/></svg>
+          <span>Supported hosters</span>
         </button>
 
-        <button class="nav-item" data-section="rules">
-          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
-          <span>Domain Rules</span>
+        <button class="nav-item" type="button" data-section="rules">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+          <span>Domain rules</span>
         </button>
       </nav>
 
       <div class="sidebar-footer">
-        <a href="https://torbox.app" target="_blank" class="footer-link">
-          <span>TorBox Dashboard</span>
-          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
+        <a href="https://torbox.app" target="_blank" rel="noopener" class="footer-link">
+          <span>TorBox dashboard</span>
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/><path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>
         </a>
       </div>
     </aside>
 
-    <!-- Main Content Panels -->
     <main class="main-content">
-      <!-- SECTION 1: ACCOUNT & API -->
       <section id="section-account" class="settings-section active">
         <div class="section-header">
-          <h2>Account & API Credentials</h2>
-          <p>Sign in with 1-click device authorization or configure your TorBox API key manually.</p>
+          <h2>Account</h2>
+          <p>Sign in with device authorization or paste an API key manually.</p>
         </div>
 
-        <!-- 1-Click Device Sign In Card -->
-        <div class="card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08)); border-color: rgba(16, 185, 129, 0.3);">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <h3 style="font-size:14px; margin-bottom:4px;">⚡ Instant 1-Click Sign In</h3>
-              <p style="font-size:12px; color:var(--text-muted); margin:0;">Authorize with TorBox in a single click without copying API keys.</p>
+        <div class="card">
+          <div class="signin-row">
+            <div class="signin-copy">
+              <h3>Sign in with TorBox</h3>
+              <p>Authorize this extension without copying an API key.</p>
             </div>
-            <button id="optDeviceAuthBtn" class="btn btn-emerald">Sign In with TorBox</button>
+            <button id="optDeviceAuthBtn" class="btn btn-primary" type="button">Sign in</button>
           </div>
-          <div id="optAuthCodeContainer" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);">
-            <div style="font-size:12px; color:var(--text-muted);">Enter this confirmation code in the opened TorBox window:</div>
-            <div id="optAuthCodeDisplay" style="font-family:monospace; font-size:20px; font-weight:800; color:var(--emerald); margin:6px 0;">------</div>
-            <div id="optAuthStatusText" style="font-size:11px; color:var(--text-dim);">⏳ Waiting for authorization...</div>
+          <p id="optSigninStatus" class="auth-status" role="status" hidden></p>
+
+          <div id="optAuthCodeContainer" class="auth-code-panel" hidden>
+            <p class="card-desc">Enter this code on the authorization page. The page opens with the code already filled in.</p>
+            <div class="auth-code-row">
+              <code id="optAuthCodeDisplay" class="auth-code">------</code>
+              <button id="optCopyAuthCodeBtn" class="btn btn-secondary" type="button">Copy code</button>
+            </div>
+            <a id="optAuthVerifyLink" class="btn btn-secondary btn-block" href="https://torbox.app/oauth/device" target="_blank" rel="noopener">Open authorization page</a>
+            <p id="optAuthStatusText" class="auth-status" role="status">Waiting for approval…</p>
           </div>
         </div>
 
         <div class="card">
           <div class="form-group">
-            <label for="apiKey">TorBox API Key (Manual Entry)</label>
+            <label for="apiKey">API key</label>
             <div class="input-with-actions">
-              <input type="password" id="apiKey" placeholder="Enter your TorBox API Key">
-              <button id="toggleVisibleBtn" class="btn btn-icon" title="Show/Hide Key">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
+              <input type="password" id="apiKey" placeholder="Paste your TorBox API key" autocomplete="off" spellcheck="false">
+              <button id="toggleVisibleBtn" class="btn btn-icon" type="button" title="Show or hide the key" aria-label="Show or hide the API key">
+                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>
               </button>
             </div>
-            <span class="help-text">You can also copy your API key from <a href="https://torbox.app/settings" target="_blank">TorBox Settings</a>.</span>
+            <span class="help-text">You can copy your API key from <a href="https://torbox.app/settings" target="_blank" rel="noopener">TorBox settings</a>.</span>
           </div>
 
           <div class="actions-row">
-            <button id="saveKeyBtn" class="btn btn-primary">Save Key</button>
-            <button id="testKeyBtn" class="btn btn-secondary">Test Connection</button>
-            <button id="removeKeyBtn" class="btn btn-danger">Disconnect</button>
+            <button id="saveKeyBtn" class="btn btn-primary" type="button">Save key</button>
+            <button id="testKeyBtn" class="btn btn-secondary" type="button">Test connection</button>
+            <button id="removeKeyBtn" class="btn btn-danger" type="button">Disconnect</button>
           </div>
 
-          <div id="apiStatusMsg" class="status-box" style="display:none;"></div>
+          <div id="apiStatusMsg" class="status-box" role="status" hidden></div>
         </div>
 
-        <!-- Account Overview Card -->
-        <div id="accountOverviewCard" class="card" style="display:none;">
+        <div id="accountOverviewCard" class="card" hidden>
           <div class="card-header-row">
-            <h3>Connected Profile & Usage</h3>
-            <span id="overviewTierBadge" class="tier-pill">PRO</span>
+            <h3>Connected profile</h3>
+            <span id="overviewTierBadge" class="tier-pill">FREE</span>
           </div>
 
           <div class="profile-grid">
             <div class="profile-item">
-              <span class="profile-label">Email / User</span>
+              <span class="profile-label">Email or user</span>
               <strong id="overviewEmail">--</strong>
             </div>
             <div class="profile-item">
-              <span class="profile-label">Daily Bandwidth</span>
+              <span class="profile-label">Daily bandwidth</span>
               <strong id="overviewBandwidth">--</strong>
             </div>
             <div class="profile-item">
-              <span class="profile-label">Plan Expiration</span>
+              <span class="profile-label">Plan expiration</span>
               <strong id="overviewExpires">--</strong>
             </div>
             <div class="profile-item">
-              <span class="profile-label">Lifetime Downloaded</span>
+              <span class="profile-label">Lifetime downloaded</span>
               <strong id="overviewTotalDl">--</strong>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- SECTION 2: SCANNING PREFERENCES -->
       <section id="section-scanning" class="settings-section">
         <div class="section-header">
-          <h2>Scanning & Detection Preferences</h2>
-          <p>Customize how the extension interacts with web pages and displays indicators.</p>
+          <h2>Scanning</h2>
+          <p>Control how the extension inspects pages and reports results.</p>
         </div>
 
         <div class="card">
           <div class="toggle-list">
             <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Automatic Page Scanning</strong>
-                <span>Automatically inspect web pages for supported links and magnet URIs on load.</span>
-              </div>
+              <span class="toggle-text">
+                <strong>Automatic page scanning</strong>
+                <span>Inspect pages for supported links and magnet URIs on load.</span>
+              </span>
               <input type="checkbox" id="autoScanToggle" class="switch">
             </label>
 
             <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Deep Plaintext Link Detection</strong>
-                <span>Scan forum posts and text containers for unlinked magnet URIs and hoster links.</span>
-              </div>
+              <span class="toggle-text">
+                <strong>Plain-text link detection</strong>
+                <span>Scan forum posts and text containers for unlinked magnets and hoster URLs.</span>
+              </span>
               <input type="checkbox" id="scanTextLinksToggle" class="switch">
             </label>
 
             <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Floating Quick-Action Dock</strong>
-                <span>Show sleek floating badge on pages when downloadable links are detected.</span>
-              </div>
+              <span class="toggle-text">
+                <strong>Floating dock</strong>
+                <span>Show the TorBox dock on pages where downloadable links are found.</span>
+              </span>
               <input type="checkbox" id="showFloatingDockToggle" class="switch">
             </label>
 
             <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Desktop Notifications</strong>
-                <span>Show native OS notifications when context menu downloads start or complete.</span>
-              </div>
+              <span class="toggle-text">
+                <strong>Desktop notifications</strong>
+                <span>Show a system notification when a context-menu download starts or completes.</span>
+              </span>
               <input type="checkbox" id="notificationsToggle" class="switch">
             </label>
 
             <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Background Cloud Completion Alerts</strong>
-                <span>Notify me when queued downloads finish in the TorBox cloud.</span>
-              </div>
+              <span class="toggle-text">
+                <strong>Cloud completion alerts</strong>
+                <span>Notify me when a queued download finishes in the TorBox cloud.</span>
+              </span>
               <input type="checkbox" id="backgroundCompletionAlertsToggle" class="switch">
             </label>
 
             <label class="toggle-row">
-              <div class="toggle-text">
-                <strong>Skip "Save As" Dialog (Silent Direct Download)</strong>
-                <span>Directly save files to your default download folder without opening the save window.</span>
-              </div>
+              <span class="toggle-text">
+                <strong>Skip the save dialog</strong>
+                <span>Save files to your default download folder without opening the save window.</span>
+              </span>
               <input type="checkbox" id="skipSaveDialogToggle" class="switch">
             </label>
           </div>
 
-          <div class="form-group" style="margin-top: 20px;">
-            <label for="downloadEngineSelect">Download Manager Routing</label>
+          <div class="form-group">
+            <label for="downloadEngineSelect">Download manager</label>
             <select id="downloadEngineSelect" class="select-box">
-              <option value="idm">Internet Download Manager / External Tools (IDM, FDM, JDownloader)</option>
-              <option value="browser">Browser Built-In Downloader (Chrome / Firefox internal engine)</option>
+              <option value="idm">External manager (IDM, FDM, JDownloader)</option>
+              <option value="browser">Browser built-in downloader</option>
             </select>
-            <span class="help-text">Select IDM mode so Internet Download Manager automatically catches and downloads links.</span>
+            <span class="help-text">External mode lets IDM and similar tools catch the download link.</span>
           </div>
 
-          <div class="actions-row" style="margin-top: 20px;">
-            <button id="savePreferencesBtn" class="btn btn-primary">Save Preferences</button>
+          <div class="actions-row">
+            <button id="savePreferencesBtn" class="btn btn-primary" type="button">Save preferences</button>
           </div>
-          <div id="prefsStatusMsg" class="status-box" style="display:none;"></div>
+          <div id="prefsStatusMsg" class="status-box" role="status" hidden></div>
         </div>
       </section>
 
-      <!-- SECTION 3: CLOUD INTEGRATIONS -->
       <section id="section-cloud" class="settings-section">
         <div class="section-header">
-          <h2>Cloud Storage Integrations</h2>
-          <p>Offload and push TorBox downloads directly to your cloud storage providers.</p>
+          <h2>Cloud storage</h2>
+          <p>Send TorBox downloads to a connected storage provider.</p>
         </div>
 
         <div class="card">
-          <div class="cloud-grid" id="cloudIntegrationsGrid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px;">
-            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
-              <span style="font-size:18px;">📁</span>
-              <strong style="margin-top:4px; font-size:13px;">Google Drive</strong>
-              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
-            </div>
-            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
-              <span style="font-size:18px;">☁️</span>
-              <strong style="margin-top:4px; font-size:13px;">OneDrive</strong>
-              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
-            </div>
-            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
-              <span style="font-size:18px;">📦</span>
-              <strong style="margin-top:4px; font-size:13px;">Dropbox</strong>
-              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
-            </div>
-            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
-              <span style="font-size:18px;">🚀</span>
-              <strong style="margin-top:4px; font-size:13px;">Gofile</strong>
-              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
-            </div>
-            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
-              <span style="font-size:18px;">🗄️</span>
-              <strong style="margin-top:4px; font-size:13px;">1Fichier</strong>
-              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
-            </div>
-            <div class="profile-item" style="padding:14px; background:var(--bg-input); border-radius:8px; border:1px solid var(--border-subtle);">
-              <span style="font-size:18px;">💾</span>
-              <strong style="margin-top:4px; font-size:13px;">Pixeldrain</strong>
-              <span class="badge-tag active" style="margin-top:6px; font-size:10px;">Supported</span>
-            </div>
-          </div>
-          <span class="help-text" style="margin-top:14px;">Manage your linked OAuth cloud accounts on your <a href="https://torbox.app/settings" target="_blank">TorBox Settings Page</a>.</span>
+          <ul class="provider-list">
+            <li><span class="provider-name">Google Drive</span><span class="badge-tag active">Supported</span></li>
+            <li><span class="provider-name">OneDrive</span><span class="badge-tag active">Supported</span></li>
+            <li><span class="provider-name">Dropbox</span><span class="badge-tag active">Supported</span></li>
+            <li><span class="provider-name">Gofile</span><span class="badge-tag active">Supported</span></li>
+            <li><span class="provider-name">1Fichier</span><span class="badge-tag active">Supported</span></li>
+            <li><span class="provider-name">Pixeldrain</span><span class="badge-tag active">Supported</span></li>
+          </ul>
+          <span class="help-text">Manage linked accounts on your <a href="https://torbox.app/settings" target="_blank" rel="noopener">TorBox settings page</a>.</span>
         </div>
       </section>
 
-      <!-- SECTION 4: SUPPORTED HOSTERS -->
       <section id="section-hosters" class="settings-section">
         <div class="section-header">
-          <h2>Supported Hosters & Providers (<span id="hostersCount">300+</span>)</h2>
-          <p>All file hosters and download services supported by the TorBox debrid engine.</p>
+          <h2>Supported hosters <span class="count-text">(<span id="hostersCount">300+</span>)</span></h2>
+          <p>File hosters and streaming sites handled by the TorBox debrid engine.</p>
         </div>
 
         <div class="card">
           <div class="search-box">
-            <input type="text" id="hosterSearchInput" placeholder="Search hoster or streaming site (e.g. 1fichier, mega, streamtape)...">
+            <input type="search" id="hosterSearchInput" placeholder="Search a hoster or streaming site" aria-label="Search supported hosters">
           </div>
 
           <div class="hosters-table-container">
             <table class="hosters-table">
               <thead>
                 <tr>
-                  <th>Domain</th>
-                  <th>Category</th>
-                  <th>Status</th>
+                  <th scope="col">Domain</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Status</th>
                 </tr>
               </thead>
               <tbody id="hostersTableBody">
-                <tr><td colspan="3" style="text-align:center;">Loading hosters directory...</td></tr>
+                <tr><td colspan="3" class="table-message">Loading hosters…</td></tr>
               </tbody>
             </table>
           </div>
         </div>
       </section>
 
-      <!-- SECTION 5: DOMAIN RULES -->
       <section id="section-rules" class="settings-section">
         <div class="section-header">
-          <h2>Custom Domain Exclusions</h2>
-          <p>Specify websites where TorBox automatic scanning should be disabled.</p>
+          <h2>Domain rules</h2>
+          <p>Sites where TorBox should not scan or show the dock.</p>
         </div>
 
         <div class="card">
           <div class="form-group">
-            <label for="excludedDomainsTextarea">Excluded Domains (one per line)</label>
+            <label for="excludedDomainsTextarea">Excluded domains, one per line</label>
             <textarea id="excludedDomainsTextarea" rows="6" class="textarea-box" placeholder="example.com&#10;internal.company.com"></textarea>
-            <span class="help-text">Excluded sites are skipped entirely — TorBox does not inject or scan them. Subdomains match automatically (adding <code>example.com</code> also covers <code>sub.example.com</code>), and <code>*.example.com</code> or full URLs are accepted.</span>
+            <span class="help-text">Subdomains are covered automatically, so <code>example.com</code> also excludes <code>sub.example.com</code>. Wildcards and full URLs are accepted.</span>
           </div>
 
           <div class="actions-row">
-            <button id="saveRulesBtn" class="btn btn-primary">Save Domain Rules</button>
+            <button id="saveRulesBtn" class="btn btn-primary" type="button">Save domain rules</button>
           </div>
-          <div id="rulesStatusMsg" class="status-box" style="display:none;"></div>
+          <div id="rulesStatusMsg" class="status-box" role="status" hidden></div>
         </div>
       </section>
     </main>

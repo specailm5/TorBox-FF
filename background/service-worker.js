@@ -68,10 +68,10 @@ if (typeof TorBoxConstants === 'undefined') {
       INCLUDE_SITE: "INCLUDE_SITE"
     },
     PLAN_TIERS: {
-      0: { name: "Free", badge: "FREE", color: "#94a3b8" },
-      1: { name: "Essential", badge: "ESSENTIAL", color: "#3b82f6" },
-      2: { name: "Pro", badge: "PRO", color: "#10b981" },
-      3: { name: "Standard", badge: "STANDARD", color: "#8b5cf6" }
+      0: { name: "Free", badge: "FREE", color: "#9ca3af" },
+      1: { name: "Essential", badge: "ESSENTIAL", color: "#04bf8a" },
+      2: { name: "Pro", badge: "PRO", color: "#04bf8a" },
+      3: { name: "Standard", badge: "STANDARD", color: "#04bf8a" }
     }
   };
 }
@@ -254,7 +254,7 @@ async function getUserInfo() {
     const data = await apiRequest('/v1/api/user/me?settings=true');
     const u = data.data || {};
 
-    const planTier = TorBoxConstants.PLAN_TIERS[u.plan] || { name: 'Free', badge: 'FREE', color: '#94a3b8' };
+    const planTier = TorBoxConstants.PLAN_TIERS[u.plan] || { name: 'Free', badge: 'FREE', color: '#9ca3af' };
 
     return {
       success: true,
@@ -1368,9 +1368,7 @@ const TORBOX_CONTENT_SCRIPT_FILES = [
 
 // Domains TorBox never needs to run on.
 const TORBOX_ALWAYS_EXCLUDED_MATCHES = [
-  '*://*.torbox.app/*',
-  '*://*.google.com/search*',
-  '*://*.google.com/imghp*'
+  '*://*.torbox.app/*'
 ];
 
 function buildExcludeMatchPatterns(domains) {

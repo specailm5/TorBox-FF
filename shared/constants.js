@@ -44,20 +44,11 @@ const TorBoxConstants = {
     INCLUDE_SITE: "INCLUDE_SITE"
   },
 
-  CLOUD_PROVIDERS: {
-    googledrive: { name: "Google Drive", icon: "📁" },
-    onedrive: { name: "OneDrive", icon: "☁️" },
-    dropbox: { name: "Dropbox", icon: "📦" },
-    gofile: { name: "Gofile", icon: "🚀" },
-    "1fichier": { name: "1Fichier", icon: "🗄️" },
-    pixeldrain: { name: "Pixeldrain", icon: "💾" }
-  },
-
   PLAN_TIERS: {
-    0: { name: "Free", badge: "FREE", color: "#94a3b8" },
-    1: { name: "Essential", badge: "ESSENTIAL", color: "#3b82f6" },
-    2: { name: "Pro", badge: "PRO", color: "#10b981" },
-    3: { name: "Standard", badge: "STANDARD", color: "#8b5cf6" }
+    0: { name: "Free", badge: "FREE", color: "#9ca3af" },
+    1: { name: "Essential", badge: "ESSENTIAL", color: "#04bf8a" },
+    2: { name: "Pro", badge: "PRO", color: "#04bf8a" },
+    3: { name: "Standard", badge: "STANDARD", color: "#04bf8a" }
   },
 
   DEFAULT_SETTINGS: {

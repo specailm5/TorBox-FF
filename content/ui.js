@@ -1,24 +1,65 @@
 /**
  * TorBox In-Page UI Controller
- * - Floating Quick Action Dock summarizing found links with 1-click downloads drawer.
- * - Floating download widget on hoster landing pages.
+ * - Floating dock summarizing detected links, with a 1-click download drawer.
+ * - Values from the host page are escaped before they enter the drawer markup.
  */
 
 class TorBoxUI {
   constructor() {
     this.streamIndicator = null;
     this.floatingDock = null;
+    this.floatingDockShadow = null;
     this.dockMinimized = false;
+    this.dockDismissed = false;
     this.openDrawerGroups = new Set();
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !this.floatingDockShadow) return;
+      const drawer = this.floatingDockShadow.querySelector('.tb-dock-drawer');
+      if (drawer && !drawer.hidden) {
+        this._setDrawerOpen(false);
+      }
+    });
   }
 
   // Stubs in case called from elsewhere
   createIndicator() {}
   updateIndicator() {}
   removeIndicator() {}
+  createStreamIndicator() {}
+  removeStreamIndicator() {}
+
+  _escapeHtml(value) {
+    if (!value) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  _setDrawerOpen(open) {
+    if (!this.floatingDockShadow) return;
+    const drawer = this.floatingDockShadow.querySelector('.tb-dock-drawer');
+    const toggle = this.floatingDockShadow.querySelector('#dockToggleBtn');
+    if (!drawer) return;
+
+    const active = this.floatingDockShadow.activeElement;
+    drawer.hidden = !open;
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.textContent = open ? 'Close' : 'View';
+      if (!open && active && drawer.contains(active)) {
+        toggle.focus();
+      }
+    }
+    if (open && this.floatingDock && this.floatingDock._renderDrawer) {
+      this.floatingDock._renderDrawer();
+    }
+  }
 
   /**
-   * Floating Quick-Action Dock & Drawer (bottom right of page)
+   * Floating quick-action dock and drawer, anchored bottom right of the page.
    */
   updateFloatingDock(pageLinksMap, enabled = true) {
     if (!enabled) {
@@ -32,6 +73,8 @@ class TorBoxUI {
       return;
     }
 
+    if (this.dockDismissed) return;
+
     let cachedCount = 0;
     let checkingCount = 0;
     links.forEach(l => {
@@ -39,18 +82,16 @@ class TorBoxUI {
       else if (l.state === window.TorBoxConstants.STATES.CHECKING) checkingCount++;
     });
 
-    // Group links by release/game name and sort cached first
     const groups = {};
     links.forEach(l => {
-      let g = (l.group && l.group.trim()) || 'Page Links';
+      let g = (l.group && l.group.trim()) || 'Page links';
       if (g.length < 2 || !/[a-zA-Z0-9]/.test(g)) {
-        g = 'Page Links';
+        g = 'Page links';
       }
       if (!groups[g]) groups[g] = [];
       groups[g].push(l);
     });
 
-    // Helper for link sorting: cached first, then checking, then uncached, then errors
     const getLinkPriority = (l) => {
       if (l.state === window.TorBoxConstants.STATES.CACHED) return 1;
       if (l.state === window.TorBoxConstants.STATES.CHECKING) return 2;
@@ -59,29 +100,26 @@ class TorBoxUI {
       return 5;
     };
 
-    // Sort links within each group (cached first)
     Object.keys(groups).forEach(g => {
       groups[g].sort((a, b) => getLinkPriority(a) - getLinkPriority(b));
     });
 
-    // Sort group names so groups with cached links appear first
     const sortedGroupNames = Object.keys(groups)
       .filter(g => g && g.trim().length >= 2 && groups[g].length > 0)
       .sort((a, b) => {
         const getGroupScore = (gName) => {
           const gLinks = groups[gName] || [];
-          const hasCached = gLinks.some(l => l.state === window.TorBoxConstants.STATES.CACHED);
-          if (hasCached) return 2;
-          const hasChecking = gLinks.some(l => l.state === window.TorBoxConstants.STATES.CHECKING);
-          if (hasChecking) return 1;
+          if (gLinks.some(l => l.state === window.TorBoxConstants.STATES.CACHED)) return 2;
+          if (gLinks.some(l => l.state === window.TorBoxConstants.STATES.CHECKING)) return 1;
           return 0;
         };
         return getGroupScore(b) - getGroupScore(a);
       });
 
+    const linkLabel = links.length === 1 ? 'link' : 'links';
     const statHtml = checkingCount > 0 && cachedCount === 0
-      ? `${links.length} links (<span style="color:#60a5fa;">checking...</span>)`
-      : `${links.length} links (<strong style="color:#10b981;">${cachedCount} cached</strong>)`;
+      ? `${links.length} ${linkLabel} (checking)`
+      : `${links.length} ${linkLabel} (<strong>${cachedCount} cached</strong>)`;
 
     if (!this.floatingDock) {
       const container = document.createElement('div');
@@ -96,205 +134,245 @@ class TorBoxUI {
 
       const style = document.createElement('style');
       style.textContent = `
+        :host {
+          all: initial;
+        }
+        * {
+          box-sizing: border-box;
+        }
         .tb-dock-wrapper {
           display: flex;
-          flex-direction: column;
+          flex-direction: column-reverse;
           align-items: flex-end;
           gap: 8px;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          user-select: none;
+          font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+          font-size: 12px;
+          line-height: 1.4;
+          color: #ffffff;
+        }
+        button {
+          font-family: inherit;
+        }
+        button:focus-visible {
+          outline: 2px solid #04bf8a;
+          outline-offset: 2px;
         }
         .tb-dock-pill {
           display: flex;
           align-items: center;
           gap: 8px;
-          background: rgba(15, 23, 42, 0.95);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-          padding: 7px 14px;
-          border-radius: 30px;
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-          color: #f8fafc;
-          cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .tb-dock-pill:hover {
-          background: rgba(30, 41, 59, 0.98);
-          border-color: rgba(255, 255, 255, 0.25);
-          transform: translateY(-1px);
+          padding: 6px 8px 6px 10px;
+          background: #12141b;
+          border: 1px solid #302f2f;
+          border-radius: 8px;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
         }
         .tb-dock-brand {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          font-weight: 800;
           font-size: 12px;
-          color: #38bdf8;
+          font-weight: 600;
+          color: #ffffff;
         }
         .tb-dock-stat {
           font-size: 11px;
-          color: #94a3b8;
+          color: #9ca3af;
+        }
+        .tb-dock-stat strong {
+          color: #04bf8a;
+          font-weight: 600;
         }
         .tb-dock-toggle-btn {
-          background: rgba(59, 130, 246, 0.2);
-          border: 1px solid rgba(59, 130, 246, 0.4);
-          color: #60a5fa;
-          font-size: 11px;
-          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          min-height: 24px;
           padding: 3px 8px;
-          border-radius: 12px;
+          background: #04bf8a;
+          border: 1px solid #04bf8a;
+          border-radius: 6px;
+          color: #04120d;
+          font-size: 11px;
+          font-weight: 600;
           cursor: pointer;
+        }
+        .tb-dock-toggle-btn:hover {
+          background: #03a878;
+          border-color: #03a878;
         }
         .tb-dock-close {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 24px;
+          min-height: 24px;
+          padding: 0 4px;
           background: transparent;
-          border: none;
-          color: #64748b;
+          border: 1px solid transparent;
+          border-radius: 4px;
+          color: #9ca3af;
+          font-size: 14px;
+          line-height: 1.2;
           cursor: pointer;
-          font-size: 13px;
-          padding: 2px 4px;
-          line-height: 1;
         }
-        .tb-dock-close:hover { color: #f8fafc; }
+        .tb-dock-close:hover {
+          color: #ffffff;
+          border-color: #302f2f;
+        }
 
-        /* Expanded Quick Drawer */
         .tb-dock-drawer {
           width: 380px;
           max-width: calc(100vw - 32px);
-          height: 500px;
-          max-height: 75vh;
-          background: rgba(15, 23, 42, 0.98);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          border-radius: 14px;
-          box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+          max-height: min(500px, 75vh);
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          animation: tb-slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+          background: #12141b;
+          border: 1px solid #302f2f;
+          border-radius: 12px;
+          box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
         }
-        @keyframes tb-slide-up {
-          from { opacity: 0; transform: translateY(10px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
+        .tb-dock-drawer[hidden] {
+          display: none;
         }
         .tb-drawer-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 10px 14px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-          font-size: 12px;
-          font-weight: 700;
-          color: #f8fafc;
+          gap: 8px;
+          padding: 9px 12px;
+          border-bottom: 1px solid #302f2f;
           flex-shrink: 0;
+        }
+        .tb-drawer-title {
+          font-size: 12px;
+          font-weight: 600;
+          color: #ffffff;
+        }
+        .tb-drawer-count {
+          font-size: 11px;
+          color: #04bf8a;
         }
         .tb-drawer-scroll {
           flex: 1;
           min-height: 0;
-          overflow-y: auto !important;
-          overflow-x: hidden;
-          padding: 10px;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          padding: 8px;
           display: flex;
           flex-direction: column;
-          gap: 8px;
-          overscroll-behavior: contain;
+          gap: 6px;
+          background: #0f1117;
+          scrollbar-width: thin;
+          scrollbar-color: #454545 transparent;
         }
-        .tb-drawer-scroll::-webkit-scrollbar {
+        .tb-drawer-scroll::-webkit-scrollbar,
+        .tb-group-body::-webkit-scrollbar {
           width: 6px;
         }
-        .tb-drawer-scroll::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.25);
-          border-radius: 4px;
+        .tb-drawer-scroll::-webkit-scrollbar-thumb,
+        .tb-group-body::-webkit-scrollbar-thumb {
+          background: #454545;
+          border-radius: 3px;
         }
-        .tb-drawer-scroll::-webkit-scrollbar-thumb:hover {
-          background: rgba(255, 255, 255, 0.4);
+        .tb-drawer-footer {
+          flex-shrink: 0;
+          padding: 6px 10px;
+          border-top: 1px solid #302f2f;
+          background: #12141b;
+          text-align: right;
+        }
+        .tb-drawer-exclude-btn {
+          display: inline-flex;
+          align-items: center;
+          min-height: 24px;
+          padding: 2px 4px;
+          background: transparent;
+          border: none;
+          color: #9ca3af;
+          font-size: 10px;
+          line-height: 1.4;
+          cursor: pointer;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+        }
+        .tb-drawer-exclude-btn:hover {
+          color: #ffffff;
         }
         .tb-drawer-group {
-          background: rgba(30, 41, 59, 0.6);
-          border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.06);
-          overflow: hidden;
           flex-shrink: 0;
-          transition: border-color 0.2s;
+          overflow: hidden;
+          background: #1e2129;
+          border: 1px solid #302f2f;
+          border-radius: 8px;
         }
         .tb-drawer-group.has-cached {
-          border-color: rgba(16, 185, 129, 0.35);
+          border-color: rgba(4, 191, 138, 0.4);
         }
         .tb-group-header-btn {
           width: 100%;
-          padding: 10px 12px;
-          background: rgba(255, 255, 255, 0.03);
-          border: none;
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
           gap: 8px;
-          cursor: pointer;
-          color: #f8fafc;
+          padding: 8px 10px;
+          background: transparent;
+          border: none;
+          color: #ffffff;
+          font-size: 11px;
           text-align: left;
-          transition: background 0.2s;
+          cursor: pointer;
         }
         .tb-group-header-btn:hover {
-          background: rgba(255, 255, 255, 0.07);
+          background: rgba(255, 255, 255, 0.04);
         }
         .tb-group-title {
-          font-size: 12px;
-          font-weight: 700;
-          color: #f8fafc;
-          line-height: 1.45;
-          word-break: break-word;
           flex: 1;
+          min-width: 0;
+          font-size: 11px;
+          font-weight: 600;
+          color: #d1d5db;
+          line-height: 1.4;
+          word-break: break-word;
         }
         .tb-group-meta {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 5px;
           flex-shrink: 0;
-          margin-top: 2px;
         }
         .tb-group-badge {
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: 0.3px;
-          color: #34d399;
-          background: rgba(16, 185, 129, 0.15);
-          border: 1px solid rgba(16, 185, 129, 0.35);
-          padding: 2px 6px;
-          border-radius: 10px;
+          padding: 0 4px;
+          border: 1px solid rgba(4, 191, 138, 0.4);
+          border-radius: 4px;
+          background: rgba(4, 191, 138, 0.1);
+          color: #04bf8a;
+          font-size: 9px;
+          font-weight: 600;
+          white-space: nowrap;
         }
         .tb-group-count {
-          font-size: 10px;
-          color: #94a3b8;
-          background: rgba(255, 255, 255, 0.06);
-          padding: 2px 6px;
-          border-radius: 10px;
+          padding: 0 4px;
+          border: 1px solid #302f2f;
+          border-radius: 4px;
+          color: #9ca3af;
+          font-size: 9px;
         }
         .tb-group-chevron {
-          font-size: 10px;
-          color: #64748b;
-          transition: transform 0.2s;
+          color: #9ca3af;
+          font-size: 8px;
+          transition: transform 0.15s ease;
         }
         .tb-drawer-group.open .tb-group-chevron {
           transform: rotate(180deg);
         }
         .tb-group-body {
           display: none;
+          flex-direction: column;
+          gap: 4px;
           max-height: 280px;
           overflow-y: auto;
           overscroll-behavior: contain;
-          padding: 6px 8px;
-          background: rgba(0, 0, 0, 0.25);
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
-          flex-direction: column;
-          gap: 5px;
-        }
-        .tb-group-body::-webkit-scrollbar {
-          width: 4px;
-        }
-        .tb-group-body::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.2);
-          border-radius: 4px;
+          padding: 4px 8px;
+          background: #0f1117;
+          border-top: 1px solid #302f2f;
         }
         .tb-drawer-group.open .tb-group-body {
           display: flex;
@@ -304,44 +382,67 @@ class TorBoxUI {
           align-items: flex-start;
           justify-content: space-between;
           gap: 8px;
-          font-size: 10px;
           padding: 5px 0;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+          border-bottom: 1px solid #302f2f;
         }
-        .tb-link-row:last-child { border-bottom: none; }
+        .tb-link-row:last-child {
+          border-bottom: none;
+        }
         .tb-link-name {
-          color: #cbd5e1;
-          line-height: 1.35;
-          word-break: break-word;
           flex: 1;
           min-width: 0;
+          color: #d1d5db;
+          font-size: 10px;
+          line-height: 1.4;
+          word-break: break-word;
         }
         .tb-link-name.cached {
-          color: #34d399;
-          font-weight: 600;
+          color: #04bf8a;
+          font-weight: 500;
         }
         .tb-link-btns {
           display: flex;
           gap: 4px;
           flex-shrink: 0;
-          margin-top: 1px;
         }
         .tb-mini-btn {
-          padding: 3px 8px;
-          border-radius: 5px;
-          font-size: 10px;
-          font-weight: 700;
-          border: none;
+          padding: 2px 7px;
+          border: 1px solid transparent;
+          border-radius: 4px;
+          background: #04bf8a;
+          color: #04120d;
+          font-size: 9px;
+          font-weight: 600;
           cursor: pointer;
-          color: white;
-          background: #10b981;
-          transition: all 0.15s;
-          flex-shrink: 0;
+          white-space: nowrap;
         }
-        .tb-mini-btn:hover { background: #059669; }
-
-        .tb-mini-btn.cloud { background: #6366f1; }
-        .tb-mini-btn.cloud:hover { background: #4f46e5; }
+        .tb-mini-btn:hover {
+          background: #03a878;
+        }
+        .tb-mini-btn.cloud {
+          background: transparent;
+          border-color: #302f2f;
+          color: #d1d5db;
+        }
+        .tb-mini-btn.cloud:hover {
+          border-color: #454545;
+          color: #ffffff;
+        }
+        .tb-mini-btn.is-error {
+          background: transparent;
+          border-color: rgba(239, 68, 68, 0.45);
+          color: #ef4444;
+        }
+        .tb-mini-btn.is-success {
+          background: #04bf8a;
+          border-color: #04bf8a;
+          color: #04120d;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          * {
+            transition-duration: 0.01ms !important;
+          }
+        }
       `;
 
       const wrapper = document.createElement('div');
@@ -349,193 +450,202 @@ class TorBoxUI {
 
       const drawer = document.createElement('div');
       drawer.className = 'tb-dock-drawer';
-      drawer.style.display = 'none';
+      drawer.hidden = true;
 
       const pill = document.createElement('div');
       pill.className = 'tb-dock-pill';
       pill.innerHTML = `
-        <div class="tb-dock-brand"><span>⚡ TorBox</span></div>
-        <div class="tb-dock-stat" id="dockStatText">${statHtml}</div>
-        <button class="tb-dock-toggle-btn" id="dockToggleBtn">🔍 View</button>
-        <button class="tb-dock-close" id="dockCloseBtn" title="Dismiss">✕</button>
+        <span class="tb-dock-brand">TorBox</span>
+        <span class="tb-dock-stat" id="dockStatText"></span>
+        <button class="tb-dock-toggle-btn" id="dockToggleBtn" type="button" aria-expanded="false">View</button>
+        <button class="tb-dock-close" id="dockCloseBtn" type="button" aria-label="Dismiss TorBox dock">×</button>
       `;
 
-      wrapper.appendChild(drawer);
       wrapper.appendChild(pill);
+      wrapper.appendChild(drawer);
 
       shadow.appendChild(style);
       shadow.appendChild(wrapper);
       (document.body || document.documentElement).appendChild(container);
 
-      // Pill toggle
       pill.addEventListener('click', (e) => {
-        if (e.target.id === 'dockCloseBtn') return;
-        const isHidden = drawer.style.display === 'none';
-        drawer.style.display = isHidden ? 'flex' : 'none';
-        if (isHidden && this.floatingDock && this.floatingDock._renderDrawer) {
-          this.floatingDock._renderDrawer();
-        }
+        if (e.target.closest('#dockCloseBtn')) return;
+        this._setDrawerOpen(drawer.hidden);
       });
 
       const closeBtn = pill.querySelector('#dockCloseBtn');
       if (closeBtn) {
         closeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          this.removeFloatingDock();
+          this.dismissDock();
         });
       }
 
       this.floatingDock = container;
     }
 
-    // Dynamic drawer renderer using the latest data
     const shadow = this.floatingDockShadow || this.floatingDock.shadowRoot;
-    if (shadow) {
-      const stat = shadow.querySelector('#dockStatText');
-      if (stat) {
-        stat.innerHTML = statHtml;
-      }
+    if (!shadow) return;
 
-      const drawer = shadow.querySelector('.tb-dock-drawer');
-      const renderDrawer = () => {
-        if (!drawer) return;
-        const scrollEl = drawer.querySelector('.tb-drawer-scroll');
-        const curScroll = scrollEl ? scrollEl.scrollTop : 0;
+    const stat = shadow.querySelector('#dockStatText');
+    if (stat) stat.innerHTML = statHtml;
 
-        let html = `
-          <div class="tb-drawer-header">
-            <span>⚡ Detected Downloads</span>
-            <span style="font-size:10px; color:#10b981;">${cachedCount} Cached</span>
-          </div>
-          <div class="tb-drawer-scroll">
-        `;
+    const drawer = shadow.querySelector('.tb-dock-drawer');
+    const renderDrawer = () => {
+      if (!drawer) return;
+      const scrollEl = drawer.querySelector('.tb-drawer-scroll');
+      const curScroll = scrollEl ? scrollEl.scrollTop : 0;
 
-        sortedGroupNames.forEach((gName) => {
-          const groupLinks = groups[gName];
-          const gCachedLinks = groupLinks.filter(l => l.state === window.TorBoxConstants.STATES.CACHED);
-          const gCachedCount = gCachedLinks.length;
-          const isOpen = this.openDrawerGroups.has(gName);
+      let html = `
+        <div class="tb-drawer-header">
+          <span class="tb-drawer-title">Detected downloads</span>
+          <span class="tb-drawer-count">${cachedCount} cached</span>
+        </div>
+        <div class="tb-drawer-scroll">
+      `;
 
-          html += `
-            <div class="tb-drawer-group ${isOpen ? 'open' : ''} ${gCachedCount > 0 ? 'has-cached' : ''}" data-group="${gName}">
-              <div class="tb-group-header-btn" role="button" tabindex="0">
-                <span class="tb-group-title" title="${gName}">🎮 ${gName}</span>
-                <div class="tb-group-meta">
-                  ${gCachedCount > 0 ? `<span class="tb-group-badge">🟢 ${gCachedCount}</span>` : ''}
-                  <span class="tb-group-count">${groupLinks.length}</span>
-                  <span class="tb-group-chevron">▼</span>
-                </div>
-              </div>
-              <div class="tb-group-body">
-                ${groupLinks.map(l => {
-                  const isCached = l.state === window.TorBoxConstants.STATES.CACHED;
-                  return `
-                    <div class="tb-link-row">
-                      <span class="tb-link-name ${isCached ? 'cached' : ''}" title="${l.url}">${l.text || l.url}</span>
-                      <div class="tb-link-btns">
-                        ${isCached ? `
-                          <button class="tb-mini-btn btn-dock-dl" data-url="${l.url}" title="Instant Direct Download">⚡ DL</button>
-                        ` : `
-                          <button class="tb-mini-btn cloud btn-dock-cloud" data-url="${l.url}" title="Add to TorBox">☁️ To TB</button>
-                        `}
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
+      sortedGroupNames.forEach((gName) => {
+        const groupLinks = groups[gName];
+        const gCachedCount = groupLinks.filter(l => l.state === window.TorBoxConstants.STATES.CACHED).length;
+        const isOpen = this.openDrawerGroups.has(gName);
+        const safeGroup = this._escapeHtml(gName);
+
+        html += `
+          <div class="tb-drawer-group ${isOpen ? 'open' : ''} ${gCachedCount > 0 ? 'has-cached' : ''}" data-group="${safeGroup}">
+            <button class="tb-group-header-btn" type="button" aria-expanded="${isOpen}">
+              <span class="tb-group-title" title="${safeGroup}">${safeGroup}</span>
+              <span class="tb-group-meta">
+                ${gCachedCount > 0 ? `<span class="tb-group-badge">${gCachedCount} cached</span>` : ''}
+                <span class="tb-group-count">${groupLinks.length}</span>
+                <span class="tb-group-chevron" aria-hidden="true">▼</span>
+              </span>
+            </button>
+            <div class="tb-group-body">
+              ${groupLinks.map(l => {
+                const isCached = l.state === window.TorBoxConstants.STATES.CACHED;
+                const safeUrl = this._escapeHtml(l.url);
+                const label = this._escapeHtml(l.text || l.url);
+                return `
+                  <div class="tb-link-row">
+                    <span class="tb-link-name ${isCached ? 'cached' : ''}" title="${safeUrl}">${label}</span>
+                    <span class="tb-link-btns">
+                      ${isCached ? `
+                        <button class="tb-mini-btn btn-dock-dl" type="button" data-url="${safeUrl}" title="Download this cached file">Download</button>
+                      ` : `
+                        <button class="tb-mini-btn cloud btn-dock-cloud" type="button" data-url="${safeUrl}" title="Add to your TorBox cloud">Add to TorBox</button>
+                      `}
+                    </span>
+                  </div>
+                `;
+              }).join('')}
             </div>
-          `;
+          </div>
+        `;
+      });
+
+      html += `
+        </div>
+        <div class="tb-drawer-footer">
+          <button class="tb-drawer-exclude-btn" id="dockExcludeBtn" type="button" title="Stop scanning and hide the TorBox dock on this site">Don't show on this site</button>
+        </div>
+      `;
+      drawer.innerHTML = html;
+
+      const newScrollEl = drawer.querySelector('.tb-drawer-scroll');
+      if (newScrollEl) newScrollEl.scrollTop = curScroll;
+
+      drawer.querySelectorAll('.tb-group-header-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const groupEl = btn.closest('.tb-drawer-group');
+          if (!groupEl) return;
+          const gName = groupEl.dataset.group;
+          const willOpen = !groupEl.classList.contains('open');
+          groupEl.classList.toggle('open', willOpen);
+          btn.setAttribute('aria-expanded', String(willOpen));
+          if (gName) {
+            if (willOpen) this.openDrawerGroups.add(gName);
+            else this.openDrawerGroups.delete(gName);
+          }
         });
+      });
 
-        html += `</div>`;
-        drawer.innerHTML = html;
-
-        const newScrollEl = drawer.querySelector('.tb-drawer-scroll');
-        if (newScrollEl) newScrollEl.scrollTop = curScroll;
-
-        // Group accordion toggles
-        drawer.querySelectorAll('.tb-group-header-btn').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const groupEl = btn.closest('.tb-drawer-group');
-            if (groupEl) {
-              const gName = groupEl.dataset.group;
-              if (groupEl.classList.contains('open')) {
-                groupEl.classList.remove('open');
-                if (gName) this.openDrawerGroups.delete(gName);
-              } else {
-                groupEl.classList.add('open');
-                if (gName) this.openDrawerGroups.add(gName);
+      drawer.querySelectorAll('.btn-dock-dl').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const url = btn.dataset.url;
+          btn.textContent = 'Starting…';
+          btn.disabled = true;
+          chrome.runtime.sendMessage({ action: window.TorBoxConstants.MESSAGES.DOWNLOAD_CACHED, url }, (res) => {
+            btn.disabled = false;
+            if (res && res.success && res.downloadUrl) {
+              if (res.engine !== 'browser') {
+                const a = document.createElement('a');
+                a.href = res.downloadUrl;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => a.remove(), 1200);
               }
+              btn.textContent = 'Started';
+              btn.classList.add('is-success');
+            } else {
+              btn.textContent = 'Failed';
+              btn.classList.add('is-error');
+              btn.title = (res && res.error) ? res.error : 'Download failed';
             }
           });
         });
+      });
 
-        drawer.querySelectorAll('.btn-dock-dl').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const u = btn.dataset.url;
-            btn.textContent = '⏳';
-            btn.disabled = true;
-            chrome.runtime.sendMessage({ action: window.TorBoxConstants.MESSAGES.DOWNLOAD_CACHED, url: u }, (res) => {
-              btn.disabled = false;
-              if (res && res.success && res.downloadUrl) {
-                if (res.engine !== 'browser') {
-                  const a = document.createElement('a');
-                  a.href = res.downloadUrl;
-                  a.style.display = 'none';
-                  document.body.appendChild(a);
-                  a.click();
-                  setTimeout(() => a.remove(), 1200);
-                }
-                btn.textContent = '✔️ Started';
-                btn.title = 'Download initiated!';
-              } else {
-                btn.textContent = '⚠️ Failed';
-                btn.style.background = '#dc2626';
-                btn.title = (res && res.error) ? res.error : 'Download failed';
-              }
-            });
-          });
-        });
+      drawer.querySelectorAll('.btn-dock-cloud').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const url = btn.dataset.url;
+          btn.textContent = 'Adding…';
+          btn.disabled = true;
+          const isMagnet = url.startsWith('magnet:?');
+          const isTorrent = url.toLowerCase().endsWith('.torrent') || url.toLowerCase().includes('.torrent?');
+          const isUsenet = url.toLowerCase().endsWith('.nzb') || url.toLowerCase().includes('.nzb?');
 
-        drawer.querySelectorAll('.btn-dock-cloud').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const u = btn.dataset.url;
-            btn.textContent = '⏳';
-            btn.disabled = true;
-            const isMagnet = u.startsWith('magnet:?');
-            const isTorrent = u.toLowerCase().endsWith('.torrent') || u.toLowerCase().includes('.torrent?');
-            const isUsenet = u.toLowerCase().endsWith('.nzb') || u.toLowerCase().includes('.nzb?');
+          let msg = window.TorBoxConstants.MESSAGES.CREATE_WEBDL;
+          if (isMagnet || isTorrent) {
+            msg = window.TorBoxConstants.MESSAGES.CREATE_TORRENT;
+          } else if (isUsenet) {
+            msg = window.TorBoxConstants.MESSAGES.CREATE_USENET;
+          }
 
-            let msg = window.TorBoxConstants.MESSAGES.CREATE_WEBDL;
-            if (isMagnet || isTorrent) {
-              msg = window.TorBoxConstants.MESSAGES.CREATE_TORRENT;
-            } else if (isUsenet) {
-              msg = window.TorBoxConstants.MESSAGES.CREATE_USENET;
+          chrome.runtime.sendMessage({ action: msg, url }, (res) => {
+            btn.disabled = false;
+            if (res && res.success) {
+              btn.textContent = 'Added';
+              btn.classList.add('is-success');
+              btn.title = res.detail || 'Added to TorBox';
+            } else {
+              btn.textContent = 'Failed';
+              btn.classList.add('is-error');
+              btn.title = (res && res.error) ? res.error : 'Failed to add to TorBox';
             }
-
-            chrome.runtime.sendMessage({ action: msg, url: u }, (res) => {
-              btn.disabled = false;
-              if (res && res.success) {
-                btn.textContent = '✔️ Added';
-                btn.style.background = '#059669';
-                btn.title = res.detail || 'Successfully added to TorBox!';
-              } else {
-                btn.textContent = '⚠️ Failed';
-                btn.style.background = '#dc2626';
-                btn.title = (res && res.error) ? res.error : 'Failed to add to TorBox';
-              }
-            });
           });
         });
-      };
+      });
 
-      this.floatingDock._renderDrawer = renderDrawer;
-      if (drawer && drawer.style.display !== 'none') {
-        renderDrawer();
+      const excludeBtn = drawer.querySelector('#dockExcludeBtn');
+      if (excludeBtn) {
+        excludeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (window.torBoxScanner && typeof window.torBoxScanner.excludeCurrentSite === 'function') {
+            window.torBoxScanner.excludeCurrentSite();
+          } else {
+            this.dismissDock();
+          }
+        });
       }
+    };
+
+    this.floatingDock._renderDrawer = renderDrawer;
+    if (drawer && !drawer.hidden) {
+      renderDrawer();
     }
   }
 
@@ -544,12 +654,22 @@ class TorBoxUI {
       this.floatingDock.remove();
       this.floatingDock = null;
       this.floatingDockShadow = null;
+      this.openDrawerGroups.clear();
     }
   }
 
-  createStreamIndicator() {}
-  removeStreamIndicator() {}
+  /**
+   * Hides the dock for the rest of this page view. It stays hidden until the
+   * page navigates or the user re-enables the site from the popup.
+   */
+  dismissDock() {
+    this.dockDismissed = true;
+    this.removeFloatingDock();
+  }
+
+  resetDockDismissal() {
+    this.dockDismissed = false;
+  }
 }
 
 window.torBoxUI = new TorBoxUI();
-

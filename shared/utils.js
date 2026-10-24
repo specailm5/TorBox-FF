@@ -6,6 +6,59 @@ const TorBoxUtils = {
   _hosterListRef: null,
   _combinedRegexCache: null,
 
+  // Hosters that mix downloadable files with non-file pages (repos, profiles,
+  // drives, documents, search pages). A link only counts when it points at a
+  // file/share path instead of the site's navigation.
+  _strictHosterRules: {
+    'github.com': { pathMarkers: ['/releases/download/', '/archive/', '/raw/', '/blob/'] },
+    't.me': { pathMarkers: ['/c/'] },
+    'dropbox.com': { pathMarkers: ['/s/', '/sh/', '/scl/'] },
+    'drive.google.com': { pathMarkers: ['/file/', '/folders/'], queryKeys: ['id'] },
+    'cdn.discordapp.com': { pathMarkers: ['/attachments/'] },
+    'imgbb.com': { pathMarkers: ['/i/'] },
+    'archive.org': { pathMarkers: ['/details/', '/download/'] },
+    'scribd.com': { pathMarkers: ['/document/', '/download/'] },
+    'annas-archive.org': { pathMarkers: ['/md5/', '/slow_download/', '/fast_download/'] },
+    'annas-archive.li': { pathMarkers: ['/md5/', '/slow_download/', '/fast_download/'] },
+    'annas-archive.se': { pathMarkers: ['/md5/', '/slow_download/', '/fast_download/'] },
+    'annas-archive.pm': { pathMarkers: ['/md5/', '/slow_download/', '/fast_download/'] },
+    'annas-archive.in': { pathMarkers: ['/md5/', '/slow_download/', '/fast_download/'] },
+    'annas-archive.gl': { pathMarkers: ['/md5/', '/slow_download/', '/fast_download/'] },
+    'annas-archive.gd': { pathMarkers: ['/md5/', '/slow_download/', '/fast_download/'] }
+  },
+
+  _downloadPathMarkers: [
+    'file', 'files', 'download', 'downloads', 'dl', 'share', 'view', 'get',
+    'embed', 'watch', 'archive', 'raw', 'blob', 'attachments', 'details',
+    'folder', 'folders', 'container', 'gallery', 'album', 'albums', 'md5',
+    'slow_download', 'fast_download', 'releases/download'
+  ],
+
+  _shareQueryKeys: new Set([
+    'file', 'files', 'download', 'downloads', 'dl', 'code', 'key', 'hash',
+    'token', 'share', 'url', 'id', 'f', 'u', 'd'
+  ]),
+
+  _fileRouteWords: new Set([
+    'file', 'files', 'download', 'downloads', 'dl', 'd', 'u', 'f', 's',
+    'sh', 'share', 'view', 'get', 'embed', 'watch', 'v', 'folder', 'folders',
+    'container', 'archive'
+  ]),
+
+  _navigationPaths: new Set([
+    'about', 'account', 'accounts', 'api', 'apps', 'article', 'articles',
+    'blog', 'browse', 'categories', 'category', 'contact', 'cookie', 'cookies',
+    'dmca', 'docs', 'faq', 'features', 'file', 'files', 'forum', 'forums',
+    'help', 'home', 'index', 'index.html', 'login', 'logout', 'marketplace',
+    'new', 'news', 'page', 'pages', 'popular', 'post', 'posts', 'premium',
+    'pricing', 'privacy', 'register', 'search', 'settings', 'signin',
+    'sign-in', 'signup', 'sign-up', 'support', 'tags', 'terms', 'thread',
+    'threads', 'top', 'topic', 'topics', 'trending', 'upgrade', 'user',
+    'users', 'wiki', 'download', 'downloads', 'folder', 'folders'
+  ]),
+
+  _fileExtensionRe: /\.(?:zip|rar|7z|tar|gz|bz2|xz|iso|img|apk|exe|msi|dmg|pkg|deb|rpm|pdf|epub|mobi|azw3|cbz|cbr|mp4|mkv|avi|webm|mov|m4v|wmv|flv|mp3|flac|wav|m4a|ogg|opus|aac|jpg|jpeg|png|gif|webp|avif|svg|torrent|nzb)(?:$|[?#])/i,
+
   /**
    * Builds and caches a Set of hoster domains and a combined RegExp for fast lookups.
    */
@@ -132,20 +185,145 @@ const TorBoxUtils = {
   },
 
   /**
-   * Checks if a given hostname matches any supported hoster domain (handles subdomains).
+   * Returns the supported hoster domain that covers a hostname, or ''.
+   * Handles subdomains (e.g., s1.rapidgator.net -> rapidgator.net).
    */
-  isSupportedHostname(hostname, hosterSet) {
-    if (!hostname || !hosterSet) return false;
+  _getMatchingHosterDomain(hostname, hosterSet) {
+    if (!hostname || !hosterSet) return '';
     const lower = hostname.toLowerCase();
-    if (hosterSet.has(lower)) return true;
+    if (hosterSet.has(lower)) return lower;
 
-    // Check parent domains (e.g., s1.rapidgator.net -> rapidgator.net)
     const parts = lower.split('.');
     for (let i = 1; i < parts.length - 1; i++) {
       const parentDomain = parts.slice(i).join('.');
-      if (hosterSet.has(parentDomain)) return true;
+      if (hosterSet.has(parentDomain)) return parentDomain;
+    }
+    return '';
+  },
+
+  /**
+   * Checks if a given hostname matches any supported hoster domain (handles subdomains).
+   */
+  isSupportedHostname(hostname, hosterSet) {
+    return Boolean(this._getMatchingHosterDomain(hostname, hosterSet));
+  },
+
+  _getStrictHosterRule(hosterDomain) {
+    if (!hosterDomain) return null;
+    for (const [domain, rule] of Object.entries(this._strictHosterRules)) {
+      if (hosterDomain === domain || hosterDomain.endsWith('.' + domain)) {
+        return rule;
+      }
+    }
+    return null;
+  },
+
+  _hasShareQuery(urlObj, extraKeys, allowBareToken = true) {
+    if (!urlObj || !urlObj.search) return false;
+
+    for (const [key, value] of urlObj.searchParams.entries()) {
+      const lowerKey = key.toLowerCase();
+      if (this._shareQueryKeys.has(lowerKey)) return true;
+      if (extraKeys && extraKeys.some(k => k.toLowerCase() === lowerKey)) return true;
+      // Bare token query such as 1fichier.com/?abc123
+      if (allowBareToken && !value && /^[a-z0-9_-]{4,}$/i.test(key)) return true;
     }
     return false;
+  },
+
+  _hasFileExtension(pathname) {
+    return this._fileExtensionRe.test(pathname || '');
+  },
+
+  /**
+   * Some hosters carry the share token in the fragment (legacy mega.nz/#!ID!KEY).
+   */
+  _hasShareHash(urlObj) {
+    const hash = (urlObj && urlObj.hash) || '';
+    return /^#(?:F?!|!)[a-z0-9_-]{4,}/i.test(hash);
+  },
+
+  _isStrictFileUrl(urlObj, rule) {
+    const path = (urlObj.pathname || '').toLowerCase();
+    if (!path || path === '/') return false;
+
+    if (this._hasFileExtension(urlObj.pathname)) return true;
+
+    for (const marker of rule.pathMarkers || []) {
+      if (path.includes(marker.toLowerCase())) return true;
+    }
+
+    for (const marker of this._downloadPathMarkers) {
+      if (path.includes('/' + marker + '/')) return true;
+    }
+
+    return this._hasShareQuery(urlObj, rule.queryKeys, false);
+  },
+
+  _isDownloadableHosterUrl(urlObj, hosterDomain) {
+    const path = urlObj.pathname || '/';
+    const rule = this._getStrictHosterRule(hosterDomain);
+
+    if (rule) {
+      return this._isStrictFileUrl(urlObj, rule);
+    }
+
+    // Dedicated file hosters: a path is usually a shared file, but skip
+    // obvious site pages such as /login, /pricing, or /article/....
+    if (path === '/' || path === '') {
+      return this._hasShareQuery(urlObj) || this._hasShareHash(urlObj);
+    }
+
+    const segments = path.split('/').filter(Boolean);
+    const first = (segments[0] || '').toLowerCase();
+    const last = (segments[segments.length - 1] || '').toLowerCase();
+    if (segments.length === 1 && this._navigationPaths.has(first) && !this._hasShareQuery(urlObj)) {
+      return false;
+    }
+    if (this._navigationPaths.has(first) && !this._fileRouteWords.has(first) && !this._hasShareQuery(urlObj)) {
+      return false;
+    }
+    if (this._navigationPaths.has(last) && !this._fileRouteWords.has(last) && !this._hasShareQuery(urlObj)) {
+      return false;
+    }
+
+    return true;
+  },
+
+  /**
+   * Checks whether a URL is a downloadable hoster link rather than a hoster's
+   * navigation, profile, repo, gallery, or search page.
+   */
+  isDownloadableHosterUrl(urlStr, supportedHosters) {
+    if (!urlStr || typeof urlStr !== 'string') return false;
+    const { hosterSet } = this._getHosterLookup(supportedHosters);
+    if (hosterSet.size === 0) return false;
+
+    try {
+      const urlObj = new URL(urlStr);
+      const hosterDomain = this._getMatchingHosterDomain(urlObj.hostname, hosterSet);
+      if (!hosterDomain) return false;
+      return this._isDownloadableHosterUrl(urlObj, hosterDomain);
+    } catch (e) {
+      return false;
+    }
+  },
+
+  /**
+   * True when a hostname belongs to a hoster that also has non-file pages
+   * (GitHub repos, drive roots, document viewers).
+   */
+  isGeneralHosterDomain(hostname, supportedHosters) {
+    const { hosterSet } = this._getHosterLookup(supportedHosters);
+    const hosterDomain = this._getMatchingHosterDomain(hostname, hosterSet);
+    return Boolean(this._getStrictHosterRule(hosterDomain));
+  },
+
+  _matchDownloadableHosterUrl(urlObj, hosterSet) {
+    const hosterDomain = this._getMatchingHosterDomain(urlObj.hostname, hosterSet);
+    if (!hosterDomain) return null;
+    if (!this._isDownloadableHosterUrl(urlObj, hosterDomain)) return null;
+    return this.normalizeUrl(urlObj.href);
   },
 
   /**
@@ -171,8 +349,9 @@ const TorBoxUtils = {
     // 2. Direct URL parse
     try {
       const urlObj = new URL(trimmed);
-      if (this.isSupportedHostname(urlObj.hostname, hosterSet)) {
-        return this.normalizeUrl(trimmed);
+      const directMatch = this._matchDownloadableHosterUrl(urlObj, hosterSet);
+      if (directMatch) {
+        return directMatch;
       }
 
       // Check query parameters for embedded target URLs (e.g. ?url=https%3A%2F%2F1fichier...)
@@ -184,8 +363,9 @@ const TorBoxUtils = {
         if (decVal.startsWith('http://') || decVal.startsWith('https://')) {
           try {
             const nestedObj = new URL(decVal);
-            if (this.isSupportedHostname(nestedObj.hostname, hosterSet)) {
-              return this.normalizeUrl(decVal);
+            const nestedMatch = this._matchDownloadableHosterUrl(nestedObj, hosterSet);
+            if (nestedMatch) {
+              return nestedMatch;
             }
           } catch (e) {}
         }
@@ -203,8 +383,9 @@ const TorBoxUtils = {
       for (const m of matches) {
         try {
           const nestedUrl = new URL(m);
-          if (this.isSupportedHostname(nestedUrl.hostname, hosterSet)) {
-            return this.normalizeUrl(m);
+          const nestedMatch = this._matchDownloadableHosterUrl(nestedUrl, hosterSet);
+          if (nestedMatch) {
+            return nestedMatch;
           }
         } catch (e) {}
       }
@@ -241,12 +422,10 @@ const TorBoxUtils = {
         for (const urlStr of urlMatches) {
           try {
             const parsed = new URL(urlStr);
-            if (this.isSupportedHostname(parsed.hostname, hosterSet)) {
-              const normalized = this.normalizeUrl(urlStr);
-              if (!seen.has(normalized)) {
-                seen.add(normalized);
-                results.push({ url: normalized, type: 'webdl' });
-              }
+            const normalized = this._matchDownloadableHosterUrl(parsed, hosterSet);
+            if (normalized && !seen.has(normalized)) {
+              seen.add(normalized);
+              results.push({ url: normalized, type: 'webdl' });
             }
           } catch (e) {}
         }
